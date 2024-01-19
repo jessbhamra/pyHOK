@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>DoorConfig</Name>
+    <Assembly>C:\Path\To\Your\PythonScript.py</Assembly>
+    <AddInId>YOUR-ADDIN-ID-HERE</AddInId>
+    <FullClassName>YourNamespace.YourClass</FullClassName>
+    <VendorId>YourVendorId</VendorId>
+  </AddIn>
+</RevitAddIns>
