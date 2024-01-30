@@ -28,7 +28,7 @@ door= doc.GetElement(doorid)
 # Function to update door parameters
 # revit23
 #make a transaction
-def update_door_parameters(door, panel_type, frame_type, width, height):
+def update_door_parameters(family_name, panel_type, frame_type, width, height):
     transaction = DB.Transaction(doc, 'Update Door Parameters')
     transaction.Start()
     try:
@@ -41,6 +41,8 @@ def update_door_parameters(door, panel_type, frame_type, width, height):
         print("Failed to update parameters")
         #transaction.RollBack()
         transaction.Commit()
+#use GUID for the shared parameters to set them better
+        
 
 # Function to save door as new family
 def save_as_new_family(door, panel_type, frame_type, width, height):
@@ -82,7 +84,7 @@ def save_as_new_family(door, panel_type, frame_type, width, height):
     trans.Start()
     try:
         family_loaded = doc.LoadFamily(family_path)
-        print str(family_loaded)
+        print (str(family_loaded))
     except Exception as e:
         print(e)
         print("here be dragons")
@@ -100,15 +102,19 @@ def save_as_new_family(door, panel_type, frame_type, width, height):
     #else:
         #print("no")   
        # DB.Transaction.RollBack()  
-            # Get the family symbol and duplicate it with the new type name
-  #          family_symbols = DB.FilteredElementCollector(revit.doc)\
-   #                            .OfClass(DB.FamilySymbol)\
-    #                           .OfCategory(DB.BuiltInCategory.OST_Doors)\
-     #                          .Where(lambda x: x.Family.Name == family_name)
-     #       for symbol in family_symbols:
-     #           new_symbol = symbol.Duplicate(type_name)
-     #           new_symbol.LookupParameter('Width').Set(width)
-     #           new_symbol.LookupParameter('Height').Set(height)
+        
+   # elemID=  DB.FilterableValueProvider.GetElementIdValue(family_name) 
+             
+     # Get the family symbol and duplicate it with the new type name
+#    filter= DB.FamilySymbolFilter(elemID)
+#    family_symbols = DB.FilteredElementCollector(doc)\
+#                    .OfClass(DB.FamilySymbol)\
+#                    .OfCategory(DB.BuiltInCategory.OST_Doors)\
+#                    .WherePasses(filter)
+#    for symbol in family_symbols:
+#        new_symbol = symbol.Duplicate(type_name)
+#        new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
+#        new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
 
     # Clean up the temporary directory
     os.remove(family_path)
@@ -128,14 +134,10 @@ def main():
     #door = ui.Selection.PickObject(ObjectType.Element)
 
     # Ask user to input Panel Type, Frame Type, Width and Height
-    panel_type = "PNL-F"
-    #forms.ask_for_string("Enter Panel Type")
-    frame_type = "FRM-S01"
-    #forms.ask_for_string("Enter Frame Type")
-    width = 36
-    #forms.ask_for_string("Enter Width (in inches)")
-    height = 84
-    #forms.ask_for_string("Enter Height (in inches)")
+    panel_type = forms.ask_for_string("Enter Panel Type")
+    frame_type = forms.ask_for_string("Enter Frame Type")
+    width = forms.ask_for_string("Enter Width (in inches)")
+    height = forms.ask_for_string("Enter Height (in inches)")
 
 #from pyrevit import forms
 #selected_parameters = forms.select_parameters()
