@@ -66,7 +66,6 @@ def save_as_new_family(door, panel_type, frame_type, width, height):
 
     print (str(fam_nam))
 
-    #fam_fmr = fam_nam.
     family_type = (doc.GetElement(fam_nam))
     fam_tpe = (family_type.Family)
 
@@ -78,9 +77,29 @@ def save_as_new_family(door, panel_type, frame_type, width, height):
     print(family_path)
 
     # Load the family back into the document
-    with DB.Transaction(doc):
-        family_loaded = DB.Document.LoadFamily(doc,family_path)
-        #if family_loaded:
+    #with 
+    trans = DB.Transaction(doc, 'Load Family')
+    trans.Start()
+    try:
+        family_loaded = doc.LoadFamily(family_path)
+        print str(family_loaded)
+    except Exception as e:
+        print(e)
+        print("here be dragons")
+    finally:
+        trans.Commit()
+        #family_loaded = DB.Document.LoadFamily(doc,family_path)
+   
+
+    #family_loaded = doc.LoadFamily(family_path)
+    #print str(family_loaded)
+
+    #if family_loaded:
+       # print("something loaded")     
+       # DB.Transaction.Commit()  
+    #else:
+        #print("no")   
+       # DB.Transaction.RollBack()  
             # Get the family symbol and duplicate it with the new type name
   #          family_symbols = DB.FilteredElementCollector(revit.doc)\
    #                            .OfClass(DB.FamilySymbol)\
@@ -92,9 +111,9 @@ def save_as_new_family(door, panel_type, frame_type, width, height):
      #           new_symbol.LookupParameter('Height').Set(height)
 
     # Clean up the temporary directory
-   # os.remove(family_path)
-    #os.rmdir(backupf_path)
-    #os.rmdir(temp_dir)
+    os.remove(family_path)
+    os.rmdir(backupf_path)
+    os.rmdir(temp_dir)
 
 
 # Main function
