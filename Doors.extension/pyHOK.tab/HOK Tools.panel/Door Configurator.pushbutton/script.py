@@ -47,7 +47,7 @@ def update_door_parameters(door, family_name, panel_type, frame_type, width, hei
 # Function to save door as new family
 def save_as_new_family(door, family_name, panel_type, frame_type, width, height):
 
-    type_name = str((width) + (height))
+    #type_name = str((width) + (height))
     # Save the family with a new name
     temp_dir = tempfile.mkdtemp()
     family_path = os.path.join(temp_dir, family_name + ".rfa")
@@ -83,6 +83,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
         # Use a FilteredElementCollector to search for elements of the given type
         collector = DB.FilteredElementCollector(doc)\
                     .OfClass(DB.Family)
+                            #.OfCategory(BuiltInCategory.OST_Doors)\
         print(str(collector))
         # Iterate through the elements to find the one with the matching name
         for elem in collector:
@@ -101,6 +102,8 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     # Set the new symbol's parameters as needed
                     new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
                     new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
+                    new_symbol.LookupParameter('PANEL 1').Set(panel_type)
+                    new_symbol.LookupParameter('FRAME').Set(frame_type)
                     
                     # Rename the symbol to reflect the new dimensions in inches
                     new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
@@ -130,7 +133,7 @@ def main():
     #forms.ask_for_string("Enter Panel Type")
     frame_type = "S02"
     #forms.ask_for_string("Enter Frame Type")
-    width = 42
+    width = 43
     #forms.ask_for_string("Enter Width (in inches)")
     height = 96
     #forms.ask_for_string("Enter Height (in inches)")
@@ -153,7 +156,7 @@ def main():
     save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 
     # Update the parameters in the door
-    update_door_parameters(door, family_name, panel_type, frame_type, width, height)
+    #update_door_parameters(door, family_name, panel_type, frame_type, width, height)
 
 # Call the main function
 main()
