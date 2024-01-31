@@ -102,9 +102,26 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     # Set the new symbol's parameters as needed
                     new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
                     new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
-                    new_symbol.LookupParameter('PANEL 1').Set(panel_type)
-                    new_symbol.LookupParameter('FRAME').Set(frame_type)
-                    
+                    parameter= new_symbol.LookupParameter('PANEL 1')
+                    if parameter is not None:
+                        panel_set = new_symbol.LookupParameter('PANEL 1').Set(panel_type)
+                        if panel_set:
+                            print('woo panel')
+                        else:
+                            print( 'noo')
+                    else:
+                        print( 'PANEL 1 parameter was not found')
+
+                    parameter2= new_symbol.LookupParameter('FRAME')
+                    if parameter2 is not None:
+                        frame_set = new_symbol.LookupParameter('FRAME').Set(frame_type)
+                        if frame_set:
+                            print('woo frame')
+                        else:
+                            print( 'noo frame')
+                    else:
+                        print( 'FRAME parameter was not found')
+                
                     # Rename the symbol to reflect the new dimensions in inches
                     new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
                     break  # Exit after processing the first symbol
