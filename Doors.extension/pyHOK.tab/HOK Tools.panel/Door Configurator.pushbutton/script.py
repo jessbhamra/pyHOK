@@ -2,7 +2,7 @@
 
 # Import necessary libraries
 from Autodesk.Revit import DB
-from Autodesk.Revit.DB import Document, BuiltInCategory, Transaction
+from Autodesk.Revit.DB import Document, BuiltInCategory, Transaction, FilteredElementCollector
 from Autodesk.Revit.UI.Selection import Selection, ObjectType
 from pyrevit import forms, revit
 import tempfile
@@ -28,7 +28,7 @@ door= doc.GetElement(doorid)
 # Function to update door parameters
 # revit23
 #make a transaction
-def update_door_parameters(family_name, panel_type, frame_type, width, height):
+def update_door_parameters(door, family_name, panel_type, frame_type, width, height):
     transaction = DB.Transaction(doc, 'Update Door Parameters')
     transaction.Start()
     try:
@@ -45,29 +45,18 @@ def update_door_parameters(family_name, panel_type, frame_type, width, height):
         
 
 # Function to save door as new family
-def save_as_new_family(door, panel_type, frame_type, width, height):
-    # Define the new family name
-    family_name = str.format(panel_type + frame_type)
+def save_as_new_family(door, family_name, panel_type, frame_type, width, height):
 
     type_name = str((width) + (height))
-
     # Save the family with a new name
     temp_dir = tempfile.mkdtemp()
     family_path = os.path.join(temp_dir, family_name + ".rfa")
     backupf_path = os.path.join(temp_dir,"Backup")
-   # family_path = str(os.path.join(temp_dir, family_name + ".rfa"))
-    #ui.SaveAs(family_path)
 
-    #extract revit family from selection
-    #fam_lam= doc.GetElement(door)  
-    #fam_lam= DB.FilteredElementCollector(door)
     print (str(door))
     fam_lam = DB.Element.GetValidTypes(door)
     fam_nam = fam_lam[0]
-
-
-    print (str(fam_nam))
-
+    #print (str(fam_nam))
     family_type = (doc.GetElement(fam_nam))
     fam_tpe = (family_type.Family)
 
@@ -76,46 +65,49 @@ def save_as_new_family(door, panel_type, frame_type, width, height):
     #DB.Document.SaveAs(family_path, DB.SaveAsOptions())
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
 
-    print(family_path)
+    #print(family_path)
 
-    # Load the family back into the document
-    #with 
-    trans = DB.Transaction(doc, 'Load Family')
-    trans.Start()
-    try:
-        family_loaded = doc.LoadFamily(family_path)
+    # Load the saved family back into the project
+    with Transaction(doc, 'Load Family') as trans:
+        trans.Start()
+        family_loaded= doc.LoadFamily(family_path)
         print (str(family_loaded))
-    except Exception as e:
-        print(e)
-        print("here be dragons")
-    finally:
+        if not family_loaded:
+            print("Failed to load family.")
+            return
         trans.Commit()
-        #family_loaded = DB.Document.LoadFamily(doc,family_path)
+
+    # Find the loaded family by name to work with its symbols
+    with Transaction(doc, 'Create New Family Type') as trans:
+        trans.Start()
+        # Use a FilteredElementCollector to search for elements of the given type
+        collector = DB.FilteredElementCollector(doc)\
+                    .OfClass(DB.Family)
+        print(str(collector))
+        # Iterate through the elements to find the one with the matching name
+        for elem in collector:
+            print (str(elem.Name))
+            if elem.Name == family_name:
+                # Get all family symbols (types) within the loaded family
+                
+                family_symbols = elem.GetFamilySymbolIds()
+                for symbol_id in family_symbols:
+                    symbol = doc.GetElement(symbol_id)
+                    # Assuming you want to duplicate the first symbol for simplicity
+                    new_symbol_id = symbol.Duplicate("{}x{}".format(int(width*12), int(height*12)))
+                    new_sym_ref = DB.Reference(new_symbol_id)
+                    new_symbol = doc.GetElement(new_sym_ref)
+                    
+                    # Set the new symbol's parameters as needed
+                    new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
+                    new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
+                    
+                    # Rename the symbol to reflect the new dimensions in inches
+                    new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
+                    break  # Exit after processing the first symbol
+                break  # Exit after finding the family
+        trans.Commit()
    
-
-    #family_loaded = doc.LoadFamily(family_path)
-    #print str(family_loaded)
-
-    #if family_loaded:
-       # print("something loaded")     
-       # DB.Transaction.Commit()  
-    #else:
-        #print("no")   
-       # DB.Transaction.RollBack()  
-        
-   # elemID=  DB.FilterableValueProvider.GetElementIdValue(family_name) 
-             
-     # Get the family symbol and duplicate it with the new type name
-#    filter= DB.FamilySymbolFilter(elemID)
-#    family_symbols = DB.FilteredElementCollector(doc)\
-#                    .OfClass(DB.FamilySymbol)\
-#                    .OfCategory(DB.BuiltInCategory.OST_Doors)\
-#                    .WherePasses(filter)
-#    for symbol in family_symbols:
-#        new_symbol = symbol.Duplicate(type_name)
-#        new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
-#        new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
-
     # Clean up the temporary directory
     os.remove(family_path)
     os.rmdir(backupf_path)
@@ -134,11 +126,16 @@ def main():
     #door = ui.Selection.PickObject(ObjectType.Element)
 
     # Ask user to input Panel Type, Frame Type, Width and Height
-    panel_type = forms.ask_for_string("Enter Panel Type")
-    frame_type = forms.ask_for_string("Enter Frame Type")
-    width = forms.ask_for_string("Enter Width (in inches)")
-    height = forms.ask_for_string("Enter Height (in inches)")
-
+    panel_type = "DF"
+    #forms.ask_for_string("Enter Panel Type")
+    frame_type = "S02"
+    #forms.ask_for_string("Enter Frame Type")
+    width = 42
+    #forms.ask_for_string("Enter Width (in inches)")
+    height = 96
+    #forms.ask_for_string("Enter Height (in inches)")
+    # Define the new family name
+    family_name = str.format(panel_type + frame_type)
 #from pyrevit import forms
 #selected_parameters = forms.select_parameters()
 #if selected_parameters:
@@ -153,10 +150,10 @@ def main():
   
 
     # Save the door as a new family and create family types
-    save_as_new_family(door, panel_type, frame_type, width, height)
+    save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 
     # Update the parameters in the door
-    update_door_parameters(door, panel_type, frame_type, width, height)
+    update_door_parameters(door, family_name, panel_type, frame_type, width, height)
 
 # Call the main function
 main()
