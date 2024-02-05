@@ -7,6 +7,7 @@ from Autodesk.Revit.UI.Selection import Selection, ObjectType
 from pyrevit import forms, revit
 import tempfile
 import os
+import clr
 
 __context__ = 'Doors'
 
@@ -99,28 +100,43 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     new_sym_ref = DB.Reference(new_symbol_id)
                     new_symbol = doc.GetElement(new_sym_ref)
                     
+
+                   # Nested family retrieval to set the panel and frame type
+                    
+
+                    door_collector = DB.FilteredElementCollector(doc)\
+                   .OfCategory(DB.BuiltInCategory.OST_Doors)\
+                   .WhereElementIsNotElementType()
+                    #nest_frm_type = 
+
+                    #nest_pnl_type = 
+
                     # Set the new symbol's parameters as needed
                     new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
                     new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
-                    parameter= new_symbol.LookupParameter('PANEL 1')
-                    if parameter is not None:
-                        panel_set = new_symbol.LookupParameter('PANEL 1').Set(panel_type)
-                        if panel_set:
-                            print('woo panel')
-                        else:
-                            print( 'noo')
-                    else:
-                        print( 'PANEL 1 parameter was not found')
 
-                    parameter2= new_symbol.LookupParameter('FRAME')
-                    if parameter2 is not None:
-                        frame_set = new_symbol.LookupParameter('FRAME').Set(frame_type)
-                        if frame_set:
-                            print('woo frame')
-                        else:
-                            print( 'noo frame')
-                    else:
-                        print( 'FRAME parameter was not found')
+                    #parameter_set= new_symbol.GetParameters()
+
+                    #for paras in parameter_set:
+                    #    if paras.Name == panel_type: # do something!    
+                    #        paras_set = paras.GetElementIds
+                    #    break
+                    
+                    
+                #    panel_set = new_symbol.LookupParameter('PANEL 1')
+                    
+                #    (panel_type)
+                     
+
+                #    parameter2= new_symbol.LookupParameter('FRAME')
+                #    if parameter2 is not None:
+                #        frame_set = new_symbol.LookupParameter('FRAME').Set(frame_type)
+                #        if frame_set:
+                #            print('woo frame')
+                #        else:
+                #            print( 'noo frame')
+                #    else:
+                #        print( 'FRAME parameter was not found')
                 
                     # Rename the symbol to reflect the new dimensions in inches
                     new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
