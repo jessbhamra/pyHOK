@@ -1,5 +1,5 @@
 """HOK Door Configurator"""
-
+# revit23
 # Import necessary libraries
 from Autodesk.Revit import DB
 from Autodesk.Revit.DB import Document, BuiltInCategory, Transaction, FilteredElementCollector
@@ -17,15 +17,13 @@ ui = __revit__.ActiveUIDocument
 doorm = ui.Selection.GetElementIds()
 
 # Get the element selection of the current document
+# replace this with something hard coded to pull prototype door- put it on github as part of extension
 doorid = (doorm[0])
 door= doc.GetElement(doorid)
-
-# revit23
 
 # Function to update door parameters - superseded
 
 def update_door_parameters(door, family_name, panel_type, frame_type, width, height):
-   
    #select parent door family 
     door_collector1 = DB.FilteredElementCollector(doc)\
                    .OfClass(DB.Family)\
@@ -48,8 +46,6 @@ def update_door_parameters(door, family_name, panel_type, frame_type, width, hei
    
 # Function to save door as new family
 def save_as_new_family(door, family_name, panel_type, frame_type, width, height):
-
-   
 # Save the family with a new name
     temp_dir = tempfile.mkdtemp()
     family_path = os.path.join(temp_dir, family_name + ".rfa")
@@ -87,7 +83,6 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 # Use a FilteredElementCollector to search for elements of the given type
         collector = DB.FilteredElementCollector(doc)\
                     .OfClass(DB.Family)
-
 # Iterate through the elements to find the one with the matching name
         for elem in collector:
             if elem.Name == family_name:
