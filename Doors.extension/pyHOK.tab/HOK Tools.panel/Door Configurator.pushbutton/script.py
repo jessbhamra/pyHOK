@@ -35,7 +35,6 @@ def update_door_parameters(door, family_name, panel_type, frame_type, width, hei
         if elemen.Name == family_name:
             parent_door = elemen
             break
-
     if parent_door:
         parentSubs = (parent_door.GetSubelements())
         print (parentSubs)
@@ -43,14 +42,10 @@ def update_door_parameters(door, family_name, panel_type, frame_type, width, hei
         panel_type_param = elemen.GetParameters("PANEL 1")
          #   famTypePamas = DB.Family.GetFamilyTypeParameterValues(elemen, panel_type_param)
         print (panel_type_param)
-
     else:
-        print (str("No dice"))           
-            
-          
+        print (str("No dice"))                    
 #use GUID for the shared parameters to set them better
-
-    
+   
 # Function to save door as new family
 def save_as_new_family(door, family_name, panel_type, frame_type, width, height):
 
