@@ -30,19 +30,65 @@ door= doc.GetElement(doorid)
 # revit23
 #make a transaction
 def update_door_parameters(door, family_name, panel_type, frame_type, width, height):
-    transaction = DB.Transaction(doc, 'Update Door Parameters')
-    transaction.Start()
-    try:
-        door.LookupParameter('PANEL 1').Set(panel_type)
-        door.LookupParameter('FRAME').Set(frame_type)
-        door.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
-        door.LookupParameter('PANEL HEIGHT').Set(height)
-        transaction.Commit()
-    except Exception:
-        print("Failed to update parameters")
-        #transaction.RollBack()
-        transaction.Commit()
+   
+   #select parent door family 
+    door_collector1 = DB.FilteredElementCollector(doc)\
+                   .OfClass(DB.Family)\
+#    door_collector1 = DB.FilteredElementCollector(doc)\
+#                   .OfCategory(DB.BuiltInCategory.OST_Doors)\
+#                   .WhereElementIsElementType()
+    parent_door = None
+    for elemen in door_collector1:  
+        if elemen.Name == family_name:
+            parent_door = elemen
+            break
+
+    if parent_door:
+        parentSubs = (parent_door.GetSubelements())
+        print (parentSubs)
+        parentId = ( parent_door.GetTypeId() )       
+ #       nested_families = DB.FilteredElementCollector(doc)\
+ #                   .OfCategory(BuiltInCategory.OST_Doors)\
+ #                   .WhereElementIsElementType()  
+ #       print (str(nested_families))
+ #       for nested_family in nested_families: 
+ #           print (str(nested_family.FamilyName))
+            
+        panel_type_param = elemen.GetParameters("PANEL 1")
+         #   famTypePamas = DB.Family.GetFamilyTypeParameterValues(elemen, panel_type_param)
+        print (panel_type_param)
+                # if famTypePamas:
+                
+          #  if panel_type_param:
+               # transactio = DB.Transaction(doc, 'Update Door Parameters')
+                #transactio.Start()
+            #panel_type_value = panel_type_param.AsString()
+                #print (str(panel_type_param))
+          #parent_door= #element iD 
+             
+        # Update parameters in the parent family based on nested family parameters
+ #           parent_door.LookupParameter("PANEL WIDTH PANEL 1").Set(panel_type_value)
+            #transactio.Commit()
+    else:
+        print (str("No dice"))           
+            
+#change it to a element ID
+# get family element ID
+# use family element ID to find nested families
+# find the nested family ID that matches the right type for panel and frame
+# use that nested ID to set parent parameter value
+            
+# Access and update parameters in the nested families            
 #use GUID for the shared parameters to set them better
+# Assuming 'doc' is the current Revit document and 'parent_family_instance' is the parent family instance
+
+# Retrieve all nested family instances within the parent family
+#nested_families = FilteredElementCollector(doc, parent_family_instance.Id).OfClass(FamilyInstance)
+
+
+# Commit the transaction to apply the changes
+# (Assuming you have started a transaction before this code)
+# transaction.Commit()
         
 
 # Function to save door as new family
@@ -63,7 +109,28 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 
     print (str(fam_tpe)+"family")
     family_temp = (doc.EditFamily(fam_tpe))
-    #DB.Document.SaveAs(family_path, DB.SaveAsOptions())
+#use family_temp as doc to find nested panels and frames
+    colle = DB.FilteredElementCollector(family_temp)\
+                    .OfCategory(BuiltInCategory.OST_Doors)\
+                    .WhereElementIsElementType()
+    nestPanel = None
+    for elemen in colle: 
+        elemenFam =  (elemen.Family) 
+        print (str(elemenFam))
+        if elemenFam.Name == panel_type:
+            nestPanel = elemenFam
+            print (nestPanel)
+            break
+            #with Transaction(doc, 'Load Family') as trans4:
+            #    trans4.Start()
+            #    panel_type_param = family_temp.LookupParameter("PANEL 1").Set(elemenFam)
+            #    trans4.Commit()
+            
+        #panel_stuff = (panel_type_param[0])
+    #    famTypePamas = elemen.GetFamilyTypeParameterValues(family_temp,(panel_type_param[0]))
+        #print (str(panel_stuff))
+    #    print (famTypePamas[0])
+
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
 
     #print(family_path)
@@ -85,10 +152,10 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
         collector = DB.FilteredElementCollector(doc)\
                     .OfClass(DB.Family)
                             #.OfCategory(BuiltInCategory.OST_Doors)\
-        print(str(collector))
+        #print(str(collector))
         # Iterate through the elements to find the one with the matching name
         for elem in collector:
-            print (str(elem.Name))
+            #print (str(elem.Name))
             if elem.Name == family_name:
                 # Get all family symbols (types) within the loaded family
                 
@@ -99,35 +166,36 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     new_symbol_id = symbol.Duplicate("{}x{}".format(int(width*12), int(height*12)))
                     new_sym_ref = DB.Reference(new_symbol_id)
                     new_symbol = doc.GetElement(new_sym_ref)
-                    
-
                    # Nested family retrieval to set the panel and frame type
-                    
-
-                    door_collector = DB.FilteredElementCollector(doc)\
-                   .OfCategory(DB.BuiltInCategory.OST_Doors)\
-                   .WhereElementIsNotElementType()
+                #door_collector = DB.FilteredElementCollector(doc)\
+                #.OfCategory(DB.BuiltInCategory.OST_Doors)\
+                # .WhereElementIsNotElementType()
                     #nest_frm_type = 
-
                     #nest_pnl_type = 
-
                     # Set the new symbol's parameters as needed
                     new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
                     new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
-
+                    paraList = new_symbol.GetParameters('PANEL 1')
+                    paraId = (paraList[0])
+                    famTypes = elem.GetFamilyTypeParameterValues(paraId.Id)
+                    print (famTypes)
+                    BamId = None
+                    for famIYam in famTypes:
+                        famZam = (doc.GetElement(famIYam))
+                        if famZam.Name == panel_type:
+                            print (famIYam)
+                            BamId = famIYam
+                            break 
+                    
+                    BamElem = (doc.GetElement(BamId))
+                    new_symbol.LookupParameter('PANEL 1').Set(BamElem.Id)
                     #parameter_set= new_symbol.GetParameters()
 
                     #for paras in parameter_set:
                     #    if paras.Name == panel_type: # do something!    
                     #        paras_set = paras.GetElementIds
-                    #    break
-                    
-                    
-                #    panel_set = new_symbol.LookupParameter('PANEL 1')
-                    
+                    #    break  #    panel_set = new_symbol.LookupParameter('PANEL 1')  
                 #    (panel_type)
-                     
-
                 #    parameter2= new_symbol.LookupParameter('FRAME')
                 #    if parameter2 is not None:
                 #        frame_set = new_symbol.LookupParameter('FRAME').Set(frame_type)
@@ -171,7 +239,7 @@ def main():
     height = 96
     #forms.ask_for_string("Enter Height (in inches)")
     # Define the new family name
-    family_name = str.format(panel_type + frame_type)
+    family_name = str.format(("08-Door-") + panel_type + ("-") + frame_type +("_HOK_I"))
 #from pyrevit import forms
 #selected_parameters = forms.select_parameters()
 #if selected_parameters:
@@ -189,7 +257,7 @@ def main():
     save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 
     # Update the parameters in the door
-    #update_door_parameters(door, family_name, panel_type, frame_type, width, height)
+   # update_door_parameters(door, family_name, panel_type, frame_type, width, height)
 
 # Call the main function
 main()
