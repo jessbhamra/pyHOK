@@ -175,6 +175,8 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     # Set the new symbol's parameters as needed
                     new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
                     new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
+                    
+                   #PANEL parameter set! 
                     paraList = new_symbol.GetParameters('PANEL 1')
                     paraId = (paraList[0])
                     famTypes = elem.GetFamilyTypeParameterValues(paraId.Id)
@@ -186,9 +188,25 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                             print (famIYam)
                             BamId = famIYam
                             break 
-                    
                     BamElem = (doc.GetElement(BamId))
                     new_symbol.LookupParameter('PANEL 1').Set(BamElem.Id)
+
+
+                    #Frame parameter set!
+                    faraList = new_symbol.GetParameters('FRAME')
+                    faraId = (faraList[0])
+                    framTypes = elem.GetFamilyTypeParameterValues(faraId.Id)
+                    print (framTypes)
+                    FramId = None
+                    for famIFam in framTypes:
+                        famFam = (doc.GetElement(famIFam))
+                        if famFam.Name == frame_type:
+                            print (famIFam)
+                            FramId = famIFam
+                            break 
+                    
+                    FramElem = (doc.GetElement(FramId))
+                    new_symbol.LookupParameter('FRAME').Set(FramElem.Id)
                     #parameter_set= new_symbol.GetParameters()
 
                     #for paras in parameter_set:
