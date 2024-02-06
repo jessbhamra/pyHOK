@@ -21,29 +21,6 @@ doorm = ui.Selection.GetElementIds()
 doorid = (doorm[0])
 door= doc.GetElement(doorid)
 
-# Function to update door parameters - superseded
-
-def update_door_parameters(door, family_name, panel_type, frame_type, width, height):
-   #select parent door family 
-    door_collector1 = DB.FilteredElementCollector(doc)\
-                   .OfClass(DB.Family)\
-
-    parent_door = None
-    for elemen in door_collector1:  
-        if elemen.Name == family_name:
-            parent_door = elemen
-            break
-    if parent_door:
-        parentSubs = (parent_door.GetSubelements())
-        print (parentSubs)
-        parentId = ( parent_door.GetTypeId() )       
-        panel_type_param = elemen.GetParameters("PANEL 1")
-         #   famTypePamas = DB.Family.GetFamilyTypeParameterValues(elemen, panel_type_param)
-        print (panel_type_param)
-    else:
-        print (str("No dice"))                    
-#use GUID for the shared parameters to set them better
-   
 # Function to save door as new family
 def save_as_new_family(door, family_name, panel_type, frame_type, width, height):
 # Save the family with a new name
@@ -94,7 +71,8 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     new_symbol_id = symbol.Duplicate("{}x{}".format(int(width*12), int(height*12)))
                     new_sym_ref = DB.Reference(new_symbol_id)
                     new_symbol = doc.GetElement(new_sym_ref)
-                
+
+#use GUID for the shared parameters instead of searching by name
                     # Set the new symbol's parameters as needed
                     new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
                     new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
@@ -143,7 +121,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
     os.rmdir(temp_dir)
 
 
-# Main function
+# Main function for user input etc
 def main():
     # Prompt user to select a door
     #selected_door_id = forms.select_element(title='Select a Door', 
