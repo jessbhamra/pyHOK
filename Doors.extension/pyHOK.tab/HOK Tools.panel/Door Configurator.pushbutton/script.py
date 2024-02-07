@@ -1,7 +1,7 @@
 """HOK Door Configurator"""
 # revit23
 # Import necessary libraries
-from Autodesk.Revit import DB
+from Autodesk.Revit import DB, UI
 from Autodesk.Revit.DB import Document, BuiltInCategory, Transaction, FilteredElementCollector
 from Autodesk.Revit.UI.Selection import Selection, ObjectType
 from pyrevit import forms, revit
@@ -36,10 +36,10 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
     fam_tpe = (family_type.Family)
     print (str(fam_tpe)+"family")
 
-# Edit Fanily to bring up the family editor
+# Edit Family to bring up the family editor
     family_temp = (doc.EditFamily(fam_tpe))
 
-# use family_temp as doc to find nested panels and frames
+# save as family_temp as doc to find nested panels and frames
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
 
 # Load the saved family back into the project
@@ -65,6 +65,8 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
             if elem.Name == family_name:
                 # Get all family symbols (types) within the loaded family
                 family_symbols = elem.GetFamilySymbolIds()
+
+
                 for symbol_id in family_symbols:
                     symbol = doc.GetElement(symbol_id)
                     # Assuming you want to duplicate the first symbol for simplicity
@@ -72,7 +74,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     new_sym_ref = DB.Reference(new_symbol_id)
                     new_symbol = doc.GetElement(new_sym_ref)
 
-#use GUID for the shared parameters instead of searching by name
+##use GUID for the shared parameters instead of searching by name
                     # Set the new symbol's parameters as needed
                     new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
                     new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
@@ -111,15 +113,71 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 
                     # Rename the family symbol to reflect the new dimensions in inches
                     new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
+
+                    #delete the other type
+                    delSym = doc.Delete(symbol_id)
                     break  # Exit after processing the first symbol
                 break  # Exit after finding the family
         trans.Commit()
-   
+# open a transaction to make changes to things in Revit
+#    with Transaction(doc, 'delete Delete family type') as trans:
+#        trans.Start()
+# Use a FilteredElementCollector to search for elements of the given type
+#        collectory = DB.FilteredElementCollector(doc)\
+#                    .OfClass(DB.Family)
+#        symDone = None
+# Iterate through the elements to find the one with the matching name
+#        for elemy in collectory:
+#            if elemy.Name == family_name:
+        # Delete Delete family symbol
+#                family_symbolys = elemy.GetFamilySymbolIds()
+#                for symbolyId in family_symbolys:
+#                    symboly = doc.GetElement(symbolyId)
+#                    if symboly.Name == 'Delete':
+#                        symDone = symboly.Delete(symbolyId)
+ #                       break
+  #                  break
+   #     trans.Commit()
+    #call_purge(family_name)
     # Clean up the temporary directory
     os.remove(family_path)
     os.rmdir(backupf_path)
     os.rmdir(temp_dir)
 
+
+#function to purge unused nested families
+
+
+
+#def call_purge(family_name):
+   # purge unused nested families and Delete type symbol
+  # initiate Edit family of family_temp 
+ # Use a FilteredElementCollector to search for elements of the given type
+#        collector = DB.FilteredElementCollector(doc)\
+#                    .OfClass(DB.Family)
+# Iterate through the elements to find the one with the matching name
+#        for elem in collector:
+#           if elem.Name == family_name:
+#                EditFami = (doc.EditFamily(elem))
+
+  # do this purge thing
+  #   
+#                cid_PurgeUnused = \
+#                    EditFami.RevitCommandId.LookupPostableCommandId(
+#                        EditFami.PostableCommand.PurgeUnused
+#                        )
+#                __revit__.PostCommand(cid_PurgeUnused) 
+
+#                EditFami.LoadFamily(doc, DB.IFamilyLoadOptions.OnFamilyFound())
+    # Load the saved family back into the project
+    #with Transaction(doc, 'Load Family') as trans:
+    #    trans.Start()
+    #    family_loaded= doc.LoadFamily(family_path)
+    #    print (str(family_loaded))
+    #    if not family_loaded:
+    #        print("Failed to load family.")
+    #        return
+    #    trans.Commit()
 
 # Main function for user input etc
 def main():
