@@ -37,7 +37,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
     print (str(fam_tpe)+"family")
 
 # Edit Family to bring up the family editor
-    family_temp = (doc.EditFamily(fam_tpe))
+    family_temp = (doc.EditFamily(fam_tpe))#EditFamily must be called OUTSIDE of a transaction
 
 # save as family_temp as doc to find nested panels and frames
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
@@ -45,7 +45,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 # Load the saved family back into the project
     with Transaction(doc, 'Load Family') as trans:
         trans.Start()
-        family_loaded= doc.LoadFamily(family_path)
+        family_loaded= doc.LoadFamily(family_path)# can this be called inside a transaction?
         print (str(family_loaded))
         if not family_loaded:
             print("Failed to load family.")
@@ -196,7 +196,6 @@ def call_purge(family_name):
                         for syms in nestSymb:
                             symSel = (famDoc.GetElement(syms))
                             if not symSel.IsActive:
-#ok this is breaking, it doesn't want to delete inside iteration of filter element collector
                                 famDoc.Delete(nestSym.Id)
                                 break
                 
