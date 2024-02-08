@@ -70,6 +70,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                 for symbol_id in family_symbols:
                     symbol = doc.GetElement(symbol_id)
                     # Assuming you want to duplicate the first symbol for simplicity
+                    #specify which to duplicate
                     new_symbol_id = symbol.Duplicate("{}x{}".format(int(width*12), int(height*12)))
                     new_sym_ref = DB.Reference(new_symbol_id)
                     new_symbol = doc.GetElement(new_sym_ref)
@@ -91,7 +92,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                         if famZam.Name == panel_type:
                             print (famIYam)
                             BamId = famIYam
-                            break 
+                            break
                     BamElem = (doc.GetElement(BamId))
                     new_symbol.LookupParameter('PANEL 1').Set(BamElem.Id)
 
@@ -100,85 +101,126 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     faraList = new_symbol.GetParameters('FRAME')
                     faraId = (faraList[0])
                     framTypes = elem.GetFamilyTypeParameterValues(faraId.Id)
-                    print (framTypes)
+                    #print (framTypes)
                     FramId = None
                     for famIFam in framTypes:
                         famFam = (doc.GetElement(famIFam))
                         if famFam.Name == frame_type:
                             print (famIFam)
                             FramId = famIFam
-                            break 
+                            break
                     FramElem = (doc.GetElement(FramId))
                     new_symbol.LookupParameter('FRAME').Set(FramElem.Id)
 
                     # Rename the family symbol to reflect the new dimensions in inches
                     new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
 
-                    #delete the other type
+                    #delete the Delete type
                     delSym = doc.Delete(symbol_id)
+    # call purge
                     break  # Exit after processing the first symbol
                 break  # Exit after finding the family
         trans.Commit()
-# open a transaction to make changes to things in Revit
-#    with Transaction(doc, 'delete Delete family type') as trans:
-#        trans.Start()
-# Use a FilteredElementCollector to search for elements of the given type
-#        collectory = DB.FilteredElementCollector(doc)\
-#                    .OfClass(DB.Family)
-#        symDone = None
-# Iterate through the elements to find the one with the matching name
-#        for elemy in collectory:
-#            if elemy.Name == family_name:
-        # Delete Delete family symbol
-#                family_symbolys = elemy.GetFamilySymbolIds()
-#                for symbolyId in family_symbolys:
-#                    symboly = doc.GetElement(symbolyId)
-#                    if symboly.Name == 'Delete':
-#                        symDone = symboly.Delete(symbolyId)
- #                       break
-  #                  break
-   #     trans.Commit()
-    #call_purge(family_name)
+
     # Clean up the temporary directory
     os.remove(family_path)
     os.rmdir(backupf_path)
     os.rmdir(temp_dir)
 
 
-#function to purge unused nested families
+
 
 
 
 #def call_purge(family_name):
-   # purge unused nested families and Delete type symbol
-  # initiate Edit family of family_temp 
- # Use a FilteredElementCollector to search for elements of the given type
-#        collector = DB.FilteredElementCollector(doc)\
+#function to purge unused nested families
+    
+# Use a FilteredElementCollector to search for elements of the given type
+#    col = DB.FilteredElementCollector(doc)\
 #                    .OfClass(DB.Family)
 # Iterate through the elements to find the one with the matching name
-#        for elem in collector:
-#           if elem.Name == family_name:
-#                EditFami = (doc.EditFamily(elem))
+#    for el in col:
+#        if el.Name == family_name:
+# initiate Edit family of family_temp 
+#            erp = (doc.EditFamily(el))
+#            EditFami = erp
+#    with Transaction(erp, 'Load Family') as trans:
+#            trans.Start()
+#            colb = DB.FilteredElementCollector(erp)\
+#                        .OfClass(DB.Family)
+                    # Check if the nested family is in use, if not, delete it
+#           for s in colb:
+#                print (s)
+#                u = s.GetFamilySymbolIds()
+#                for t in u:
+#                    v = (doc.GetElement(t))
+#                    if v is not None:  # Check if v is not None before accessing its attributes
+#                        print (str(v))
+#                        if not v.IsActive:
+#                            w = doc.Delete(t)
+#                            print (w)
+#            trans.Commit()
+ # Load the saved family back into the project
+#    class FamilyOption(DB.IFamilyLoadOptions):
+#         def OnFamilyFound(self, EditFami, overwriteParameterValues):
+#            overwriteParameterValues = True
+#            return True
+#    family_loaded= EditFami.LoadFamily(doc, FamilyOption())
+#    print (str(family_loaded))
+#    if not family_loaded:
+#        print("Failed to load family.")
+#from Autodesk.Revit.DB import FilteredElementCollector, Family, Transaction
 
-  # do this purge thing
-  #   
-#                cid_PurgeUnused = \
-#                    EditFami.RevitCommandId.LookupPostableCommandId(
-#                        EditFami.PostableCommand.PurgeUnused
-#                        )
-#                __revit__.PostCommand(cid_PurgeUnused) 
+def call_purge(family_name):
+    """Function to purge unused nested families from a specified family."""
+    
+    # Find the family by name
+    family = None
+    for el in FilteredElementCollector(doc).OfClass(DB.Family):
+        if el.Name == family_name:
+            family = el
+            break
 
-#                EditFami.LoadFamily(doc, DB.IFamilyLoadOptions.OnFamilyFound())
-    # Load the saved family back into the project
-    #with Transaction(doc, 'Load Family') as trans:
-    #    trans.Start()
-    #    family_loaded= doc.LoadFamily(family_path)
-    #    print (str(family_loaded))
-    #    if not family_loaded:
-    #        print("Failed to load family.")
-    #        return
-    #    trans.Commit()
+    if family:
+        famDoc = doc.EditFamily(family)
+        # Edit the family to access nested families
+        with Transaction((famDoc), 'Purge Unused Nested Families') as trans:
+            trans.Start()
 
+            try:
+                # Check nested families and delete unused ones
+                for nested_family in (FilteredElementCollector(famDoc).OfClass(DB.Family).ToElementIds()):
+                    nestSym = famDoc.GetElement(nested_family)
+                    nestSymb= nestSym.GetFamilySymbolIds()
+                    if nestSymb:
+                        for syms in nestSymb:
+                            symSel = (famDoc.GetElement(syms))
+                            if not symSel.IsActive:
+#ok this is breaking, it doesn't want to delete inside iteration of filter element collector
+                                famDoc.Delete(nestSym.Id)
+                                break
+                
+                
+                # Load the family back into the project
+                class FamilyOption(DB.IFamilyLoadOptions):
+                    def OnFamilyFound(self, family, overwriteParameterValues):
+                        overwriteParameterValues = True
+                        return True
+
+                family_loaded = famDoc.LoadFamily(doc, FamilyOption())
+                if family_loaded:
+                    print("Family loaded successfully.") 
+                
+                trans.Commit()
+            except Exception as e:
+                print("Error: {}".format(e))
+                trans.RollBack()
+    else:
+        print("Family not found with the specified name.")
+
+                
+
+    
 # Main function for user input etc
 def main():
     # Prompt user to select a door
@@ -214,6 +256,9 @@ def main():
 
 # Update the parameters in the door
    # update_door_parameters(door, family_name, panel_type, frame_type, width, height)
+
+#purrrrrrggggggggeeeeeee
+    call_purge(family_name)
 
 # Call the main function
 main()
