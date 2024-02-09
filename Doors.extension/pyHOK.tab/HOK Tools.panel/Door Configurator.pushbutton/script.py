@@ -45,7 +45,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 # Load the saved family back into the project
     with Transaction(doc, 'Load Family') as trans:
         trans.Start()
-        family_loaded= doc.LoadFamily(family_path)# can this be called inside a transaction?
+        family_loaded= doc.LoadFamily(family_path)
         print (str(family_loaded))
         if not family_loaded:
             print("Failed to load family.")
@@ -127,11 +127,11 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
     os.rmdir(backupf_path)
     os.rmdir(temp_dir)
 
-
-
+def edit_types_and_params(family_name, panel_type, frame_type, width, height):
+    
 
 def call_purge(family_name):
-    """Function to purge unused nested families from a specified family."""
+#Function to purge unused nested families from a specified family.
     
     # Find the family by name
     family = None
@@ -159,7 +159,7 @@ def call_purge(family_name):
                                 break
                 
                 
-                # Load the family back into the project
+            # Load the family back into the project
                 class FamilyOption(DB.IFamilyLoadOptions):
                     def OnFamilyFound(self, family, overwriteParameterValues):
                         overwriteParameterValues = True
@@ -169,7 +169,8 @@ def call_purge(family_name):
                 if family_loaded:
                     print("Family loaded successfully.") 
                 
-                trans.Commit()
+                    trans.Commit()
+        #if it doesn't work, throw an error message 
             except Exception as e:
                 print("Error: {}".format(e))
                 trans.RollBack()
@@ -191,11 +192,15 @@ def main():
     #door = ui.Selection.PickObject(ObjectType.Element)
 
     # Ask user to input Panel Type, Frame Type, Width and Height
-    
-    panel_type = forms.ask_for_string("Enter Panel Type")
-    frame_type = forms.ask_for_string("Enter Frame Type")
-    width = forms.ask_for_string("Enter Width (in inches)")
-    height = forms.ask_for_string("Enter Height (in inches)")
+
+    panel_type = "DF"
+    #forms.ask_for_string("Enter Panel Type")
+    frame_type = "S01"
+    #forms.ask_for_string("Enter Frame Type")
+    width = 36
+    #forms.ask_for_string("Enter Width (in inches)")
+    height = 84
+    #forms.ask_for_string("Enter Height (in inches)")
     # Define the new family name
     family_name = str.format(("08-Door-") + panel_type + ("-") + frame_type +("_HOK_I"))
 #from pyrevit import forms
