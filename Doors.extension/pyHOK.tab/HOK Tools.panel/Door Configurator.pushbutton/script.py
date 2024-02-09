@@ -130,47 +130,6 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 
 
 
-
-
-#def call_purge(family_name):
-#function to purge unused nested families
-    
-# Use a FilteredElementCollector to search for elements of the given type
-#    col = DB.FilteredElementCollector(doc)\
-#                    .OfClass(DB.Family)
-# Iterate through the elements to find the one with the matching name
-#    for el in col:
-#        if el.Name == family_name:
-# initiate Edit family of family_temp 
-#            erp = (doc.EditFamily(el))
-#            EditFami = erp
-#    with Transaction(erp, 'Load Family') as trans:
-#            trans.Start()
-#            colb = DB.FilteredElementCollector(erp)\
-#                        .OfClass(DB.Family)
-                    # Check if the nested family is in use, if not, delete it
-#           for s in colb:
-#                print (s)
-#                u = s.GetFamilySymbolIds()
-#                for t in u:
-#                    v = (doc.GetElement(t))
-#                    if v is not None:  # Check if v is not None before accessing its attributes
-#                        print (str(v))
-#                        if not v.IsActive:
-#                            w = doc.Delete(t)
-#                            print (w)
-#            trans.Commit()
- # Load the saved family back into the project
-#    class FamilyOption(DB.IFamilyLoadOptions):
-#         def OnFamilyFound(self, EditFami, overwriteParameterValues):
-#            overwriteParameterValues = True
-#            return True
-#    family_loaded= EditFami.LoadFamily(doc, FamilyOption())
-#    print (str(family_loaded))
-#    if not family_loaded:
-#        print("Failed to load family.")
-#from Autodesk.Revit.DB import FilteredElementCollector, Family, Transaction
-
 def call_purge(family_name):
     """Function to purge unused nested families from a specified family."""
     
@@ -232,14 +191,11 @@ def main():
     #door = ui.Selection.PickObject(ObjectType.Element)
 
     # Ask user to input Panel Type, Frame Type, Width and Height
-    panel_type = "DF"
-    #forms.ask_for_string("Enter Panel Type")
-    frame_type = "S02"
-    #forms.ask_for_string("Enter Frame Type")
-    width = 43
-    #forms.ask_for_string("Enter Width (in inches)")
-    height = 96
-    #forms.ask_for_string("Enter Height (in inches)")
+    
+    panel_type = forms.ask_for_string("Enter Panel Type")
+    frame_type = forms.ask_for_string("Enter Frame Type")
+    width = forms.ask_for_string("Enter Width (in inches)")
+    height = forms.ask_for_string("Enter Height (in inches)")
     # Define the new family name
     family_name = str.format(("08-Door-") + panel_type + ("-") + frame_type +("_HOK_I"))
 #from pyrevit import forms
