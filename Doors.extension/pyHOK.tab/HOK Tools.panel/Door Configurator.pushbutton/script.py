@@ -4,7 +4,7 @@
 from Autodesk.Revit import DB, UI
 from Autodesk.Revit.DB import Document, BuiltInCategory, Transaction, FilteredElementCollector
 from Autodesk.Revit.UI.Selection import Selection, ObjectType
-from pyrevit import forms, revit
+from pyrevit import forms, revit, coreutils
 from pyrevit.forms import WPFWindow
 import tempfile
 import os
@@ -347,7 +347,7 @@ def main():
     height = form.height
     #forms.ask_for_string("Enter Height (in inches)")
     # Define the new family name
-    family_name = str.format(("08-Door-") + panel_type + ("-") + frame_type +("_HOK_I"))
+    family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleFlush_HOK_I"))
 #from pyrevit import forms
 #selected_parameters = forms.select_parameters()
 #if selected_parameters:
@@ -359,6 +359,7 @@ def main():
 # Save the door as a new family and create family types
     save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 
+    print("HOK Door Configurator finished {} at {} on {}".format(family_name, coreutils.current_time(), coreutils.current_date()))
 # Update the parameters in the door
 #    edit_types_and_params(family_name, panel_type, frame_type, width, height)
 
