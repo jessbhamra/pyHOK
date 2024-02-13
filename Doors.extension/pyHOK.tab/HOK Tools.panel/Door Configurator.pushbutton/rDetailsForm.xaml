@@ -1,0 +1,15 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Enter Details" Height="300" Width="300">
+    <StackPanel Margin="10">
+        <Label>Panel Type:</Label>
+        <TextBox x:Name="txtPanelType"/>
+        <Label>Frame Type:</Label>
+        <TextBox x:Name="txtFrameType"/>
+        <Label>Width (in inches):</Label>
+        <TextBox x:Name="txtWidth"/>
+        <Label>Height (in inches):</Label>
+        <TextBox x:Name="txtHeight"/>
+        <Button x:Name="btnSubmit" Content="Submit" Margin="0,10,0,0"/>
+    </StackPanel>
+</Window>

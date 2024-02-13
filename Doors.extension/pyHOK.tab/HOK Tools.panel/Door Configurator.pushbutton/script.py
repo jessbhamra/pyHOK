@@ -5,6 +5,7 @@ from Autodesk.Revit import DB, UI
 from Autodesk.Revit.DB import Document, BuiltInCategory, Transaction, FilteredElementCollector
 from Autodesk.Revit.UI.Selection import Selection, ObjectType
 from pyrevit import forms, revit
+from pyrevit.forms import WPFWindow
 import tempfile
 import os
 import clr
@@ -287,6 +288,7 @@ def call_purge(family_name):
     else:
         print("Family not found with the specified name.")
 
+
                 
 def purgeIt():
 
@@ -296,6 +298,9 @@ def purgeIt():
             UI.PostableCommand.PurgeUnused
             )
     __revit__.PostCommand(cid_PurgeUnused)
+
+
+# Now you can use panel_type, frame_type, width, and height as needed
 
 # Main function for user input etc
 def main():
@@ -310,13 +315,36 @@ def main():
 
     # Ask user to input Panel Type, Frame Type, Width and Height
 
-    panel_type = "DF"
+
+
+    class UserDetailsForm(WPFWindow):
+        def __init__(self, xaml_file_path):
+            WPFWindow.__init__(self, xaml_file_path)
+            self.btnSubmit.Click += self.on_submit
+
+        def on_submit(self, sender, e):
+            self.panel_type = self.txtPanelType.Text
+            self.frame_type = self.txtFrameType.Text
+            self.width = self.txtWidth.Text
+            self.height = self.txtHeight.Text
+            self.Close()
+### THIS NEEDS TO BE UPDATED ONCE WE HAVE A LOCATION FOR IT TO GO FOR DEPLOYMENT
+# Path to the XAML file
+    xaml_file_path = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
+
+# Create and show the form
+    form = UserDetailsForm(xaml_file_path)
+    form.show_dialog()
+
+# After the form is closed, you can access the inputs
+    print(form.panel_type, form.frame_type, form.width, form.height)
+    panel_type = form.panel_type
     #forms.ask_for_string("Enter Panel Type")
-    frame_type = "S02"
+    frame_type = form.frame_type
     #forms.ask_for_string("Enter Frame Type")
-    width = 37
+    width = form.width
     #forms.ask_for_string("Enter Width (in inches)")
-    height = 85
+    height = form.height
     #forms.ask_for_string("Enter Height (in inches)")
     # Define the new family name
     family_name = str.format(("08-Door-") + panel_type + ("-") + frame_type +("_HOK_I"))
