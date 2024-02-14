@@ -15,13 +15,69 @@ __context__ = 'Doors'
 
 doc = __revit__.ActiveUIDocument.Document
 ui = __revit__.ActiveUIDocument
-
+####
+####
+####New part here to pick new or edit instead of below
 doorm = ui.Selection.GetElementIds()
-
 # Get the element selection of the current document
-# replace this with something hard coded to pull prototype door
+# replace this with something hard coded inside one of the other functions/ its own function to pull the right prototype door based on the panel and frame types.
 doorid = (doorm[0])
 door= doc.GetElement(doorid)
+####
+####
+####
+# Main function for user input etc
+def main():
+    # Prompt user to select a door
+    class UserDetailsForm(WPFWindow):
+        def __init__(self, xaml_file_path):
+            WPFWindow.__init__(self, xaml_file_path)
+            self.btnSubmit.Click += self.on_submit
+            self.set_icon("C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\HOK.ico")
+
+        def on_submit(self, sender, e):
+            self.panel_type = self.txtPanelType.Text
+            self.frame_type = self.txtFrameType.Text
+            self.width = self.txtWidth.Text
+            self.height = self.txtHeight.Text
+            self.Close()
+### THIS NEEDS TO BE UPDATED ONCE WE HAVE A LOCATION FOR IT TO GO FOR DEPLOYMENT
+# Path to the XAML file
+    xaml_file_path = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
+
+# Create and show the form
+    form = UserDetailsForm(xaml_file_path)
+    form.show_dialog()
+
+# After the form is closed, you can access the inputs
+    print(form.panel_type, form.frame_type, form.width, form.height)
+    panel_type = form.panel_type.upper()
+    frame_type = form.frame_type.upper()
+    width = form.width.upper()
+    height = form.height.upper()
+
+#If user doesn't give the right input, exit out of the program
+
+#format of family name
+    family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleFlush_HOK_I"))
+
+# Convert width and height to Revit internal units (feet)
+    width = float(width) / 12.0
+    height = float(height) / 12.0
+
+#sort funtion - is this a new door or an edit to an existing door? somewhere decide what base file to start with. Where should these go?
+
+# if new, use save_as_new_family
+
+#if edit, use edit_types_and_parameters
+
+# Save the door as a new family and create family types
+    save_as_new_family(door, family_name, panel_type, frame_type, width, height)
+
+#Print success message
+    print("HOK Door Configurator finished {} at {} on {}".format(family_name, coreutils.current_time(), coreutils.current_date()))
+
+#purge
 
 # Function to save door as new family
 def save_as_new_family(door, family_name, panel_type, frame_type, width, height):
@@ -115,36 +171,23 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                             for FamSym in FamSyms:
                                 famMan.Set(parr, (FamSym)) 
 
-        #udelete unused nested families
+        #delete unused nested families
                     FlamSyms = FlamId.GetFamilySymbolIds()
                     #print(FlamSyms)
                     for FlamSym in FlamSyms: 
                         FlamSId = family_temp.GetElement(FlamSym)
-#                    if FlamSId.Family.
- #                       if not FlamSId.IsActive:
- #                               family_temp.Delete(FlamSym)
-#purge nested families                                 
-                #purge nested prototypical type
-                  #set delete type as current type
+
+        #set delete type as current type
                 famMan.CurrentType = deleteType
                 typeDel = famMan.DeleteCurrentType()  
                 if typeDel:
                     print("Deleting embrionic type...")
                 trans.Commit()
 
-        #else:
-            #print ("88")
-            #trans.RollBack()
-                    #if it doesn't work, throw an error message 
+
         except Exception as e: 
             print("Error: {}".format(e))
             trans.RollBack()
-
-
-    #do the pruge here
-
-#delete Delete family
-  
 
 #save as the family with new name and path
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
@@ -239,8 +282,6 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
 def call_purge(family_name):
 #Function to purge unused nested families from a specified family.
 
-
-#      
     # Find the family by name
     family = None
     for el in FilteredElementCollector(doc).OfClass(DB.Family):
@@ -254,7 +295,6 @@ def call_purge(family_name):
         with Transaction((famDoc), 'Purge Unused Nested Families') as trans:
             trans.Start()
 #Function to call Types from type symbols
-# Also delete Delete type
 # then purge
 
             try:
@@ -268,8 +308,6 @@ def call_purge(family_name):
                             if not symSel.IsActive:
                                 famDoc.Delete(nestSym.Id)
                                 break
-                
-                
             # Load the family back into the project
                 class FamilyOption(DB.IFamilyLoadOptions):
                     def OnFamilyFound(self, family, overwriteParameterValues):
@@ -289,9 +327,8 @@ def call_purge(family_name):
         print("Family not found with the specified name.")
 
 
-                
 def purgeIt():
-
+#doesn't do the right thing yet
     """Call Revit "Purge Unused" after completion."""
     cid_PurgeUnused = \
         UI.RevitCommandId.LookupPostableCommandId(
@@ -300,83 +337,6 @@ def purgeIt():
     __revit__.PostCommand(cid_PurgeUnused)
 
 
-# Now you can use panel_type, frame_type, width, and height as needed
-
-# Main function for user input etc
-def main():
-    # Prompt user to select a door
-    #selected_door_id = forms.select_element(title='Select a Door', 
-    #                                       of_class='FamilyInstance', 
-    #                                        category='OST_Doors')
-    #if selected_door_id is None:
-    #    print("No door selected.")
-    #    return
-    #door = ui.Selection.PickObject(ObjectType.Element)
-
-    # Ask user to input Panel Type, Frame Type, Width and Height
-
-
-
-    class UserDetailsForm(WPFWindow):
-        def __init__(self, xaml_file_path):
-            WPFWindow.__init__(self, xaml_file_path)
-            self.btnSubmit.Click += self.on_submit
-
-        def on_submit(self, sender, e):
-            self.panel_type = self.txtPanelType.Text
-            self.frame_type = self.txtFrameType.Text
-            self.width = self.txtWidth.Text
-            self.height = self.txtHeight.Text
-            self.Close()
-### THIS NEEDS TO BE UPDATED ONCE WE HAVE A LOCATION FOR IT TO GO FOR DEPLOYMENT
-# Path to the XAML file
-    xaml_file_path = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
-
-# Create and show the form
-    form = UserDetailsForm(xaml_file_path)
-    form.show_dialog()
-
-# After the form is closed, you can access the inputs
-    print(form.panel_type, form.frame_type, form.width, form.height)
-    panel_type = form.panel_type
-    #forms.ask_for_string("Enter Panel Type")
-    frame_type = form.frame_type
-    #forms.ask_for_string("Enter Frame Type")
-    width = form.width
-    #forms.ask_for_string("Enter Width (in inches)")
-    height = form.height
-    #forms.ask_for_string("Enter Height (in inches)")
-    # Define the new family name
-    family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleFlush_HOK_I"))
-#from pyrevit import forms
-#selected_parameters = forms.select_parameters()
-#if selected_parameters:
-    #do_stuff_with_parameters()
-# Convert width and height to Revit internal units (feet)
-    width = float(width) / 12.0
-    height = float(height) / 12.0
-
-# Save the door as a new family and create family types
-    save_as_new_family(door, family_name, panel_type, frame_type, width, height)
-
-    print("HOK Door Configurator finished {} at {} on {}".format(family_name, coreutils.current_time(), coreutils.current_date()))
-# Update the parameters in the door
-#    edit_types_and_params(family_name, panel_type, frame_type, width, height)
-
-#purrrrrrggggggggeeeeeee
- #   call_purge(family_name)
 
 # Call the main function
 main()
-#elif PANEL 1  and FRAME with an else so only have to iterate through fEC once
-                        
-                     #filtered element collector to grab nested door families
-                       # parTry = DB.FilteredElementCollector(family_temp)\
-                                #.OfCategory(BuiltInCategory.OST_Doors)\
-                                #.WhereElementIsElementType()
-                        
-                        #parrGet = family_temp.GetElement(parr.Id)
-                        #famTypes = famFamily.GetFamilyTypeParameterValues(parrGet.Id)
-                        #print (famTypes, "91")
-                        #BamId = None
-                        #FamId = None
