@@ -100,7 +100,6 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
 #make new type and assign values
     typeName = "{}x{}".format(int(width*12), int(height*12))
 
-
 #start a transaction and instantiate family manager
     with Transaction(family_temp, 'Make Type and set Values') as trans:
         try:
@@ -111,20 +110,15 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
             deleteType = famMan.CurrentType
             #print(str(deleteType),  " delete bB")
             typeMake = famMan.NewType(typeName)
-            print("making new type...")
-
-        
+            print("making new type...")       
 #these are the shared parameter GUIDs for the parameters we're looking for
             pwGU = "318d67dd-1f5f-43fb-a3d0-32ac31f1babb"#PANEL WIDTH PANEL 1
             phGU = "3e7f226e-bc78-407c-982a-d45a405cd2a9"#PANEL HEIGHT
             pnGU = "8e89f65d-3ed9-45c8-9808-8c315dedadce" #PANEL 1
             pfGU = "b6930f0e-c0f5-432b-80ee-6c649f876cae" #FRAME
-
-
-  #filtered element collector to grab nested door families
+ #filtered element collector to grab nested door families
             nestFams = DB.FilteredElementCollector(family_temp)\
                 .OfClass(DB.Family).ToElements()
-                
             BamId = None
             FamId = None                
             FlamId = None
@@ -135,8 +129,6 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                 elif FamThis.Name == frame_type:
                     FamId = FamThis
                 else: FlamId = FamThis
-
-                
 #If a new type was made successfully
             if typeMake:
 #get the set of Family parameters and iterate through them
@@ -147,48 +139,35 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     if parr.IsShared:
                         pParr = parr.GUID
                     #print ( pParr)
-
-  #check if the parameter GUID matches the 4 parameters we are looking to set
-  #                   
+  #check if the parameter GUID matches the 4 parameters we are looking to set                
                         if str(pParr) == pwGU:
                     #if PANEL WIDTH PANEL 
                             famMan.Set(parr, width)
-                    
                         elif str(pParr) == phGU:
                     #elif PANEL HEIGHT   
                             famMan.Set(parr, height)
-
                         elif str(pParr) == pnGU:
-                            #print (BamId.Id)
+                    #elif panel type
                             BamSyms = BamId.GetFamilySymbolIds()
                             for BamSym in BamSyms:
-                                famMan.Set(parr, BamSym) 
-                                #print(str(BamSym))
-                    
+                                famMan.Set(parr, BamSym)                    
                         elif str(pParr) == pfGU:
                             FamSyms = FamId.GetFamilySymbolIds()
-                            #print(FamSyms)
                             for FamSym in FamSyms:
                                 famMan.Set(parr, (FamSym)) 
-
         #delete unused nested families
                     FlamSyms = FlamId.GetFamilySymbolIds()
-                    #print(FlamSyms)
                     for FlamSym in FlamSyms: 
                         FlamSId = family_temp.GetElement(FlamSym)
-
         #set delete type as current type
                 famMan.CurrentType = deleteType
                 typeDel = famMan.DeleteCurrentType()  
                 if typeDel:
                     print("Deleting embrionic type...")
                 trans.Commit()
-
-
         except Exception as e: 
             print("Error: {}".format(e))
             trans.RollBack()
-
 #save as the family with new name and path
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
     print("saving new file...")
