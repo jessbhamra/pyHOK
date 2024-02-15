@@ -56,7 +56,8 @@ def main():
     width = form.width.upper()
     height = form.height.upper()
 
-#If user doesn't give the right input, exit out of the program
+#If user doesn't give the right input, exit out 
+#of the program and/ or give them another chance to enter
 
 #format of family name
     family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleFlush_HOK_I"))
