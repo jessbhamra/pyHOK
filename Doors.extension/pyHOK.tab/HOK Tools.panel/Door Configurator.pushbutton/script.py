@@ -182,7 +182,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
     print("saving new file...")
 
-    
+    collect_and_cull(family_temp)
 # Load the saved family back into the project
     print("loading new family into project...")
     with Transaction(doc, 'Load Family') as trans:
@@ -345,19 +345,9 @@ def collect_and_cull(family_doc):
                 type_a = a.GetTypeId()
                 if type_a not in used_fams:
                     used_fams.append(type_a)
-        #make a set
-#            used_families_ids = set()
-#            #iterate through parameters
-#            for param in (famMan.GetParameters()):
-#                #if the storage type of the parameter is an element ID,
-#                if param.StorageType == DB.StorageType.ElementId:
-#                    #for each type in the family
-#                    for type in famMan.Types:
-#                        #collect the values in these parameters
-#                        val = famMan.GetParameter(param).AsElementId()
-#                        if val.IntegerValue > 0:  # Valid ElementId
-#                            used_families_ids.add(val)
-#           print(used_families_ids)                
+
+
+####THIS ALMOST DOES IT, EXCEPT IT DELTES THE TYPES NOT THE PARENT FAMS BUT VERY CLOSE
     #collect door family symbols in project
             for b in  FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Doors).WhereElementIsElementType():
                 type_b = b.Id
