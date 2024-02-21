@@ -2,9 +2,9 @@
 # revit23
 # Import necessary libraries
 from Autodesk.Revit import DB, UI
-from Autodesk.Revit.DB import Document, BuiltInCategory, Transaction, FilteredElementCollector
+from Autodesk.Revit.DB import Document, BuiltInCategory, Transaction, BuiltInParameterGroup, FamilyParameter, FamilyType, FilteredElementCollector
 from Autodesk.Revit.UI.Selection import Selection, ObjectType
-from pyrevit import forms, revit, coreutils
+from pyrevit import forms, revit, coreutils, script
 from pyrevit.forms import WPFWindow
 import tempfile
 import os
@@ -17,7 +17,7 @@ doc = __revit__.ActiveUIDocument.Document
 ui = __revit__.ActiveUIDocument
 ####
 ####
-####New part here to pick new or edit instead of below
+####New part here to pick new, edit, or bulk
 doorm = ui.Selection.GetElementIds()
 # Get the element selection of the current document
 # replace this with something hard coded inside one of the other functions/ its own function to pull the right prototype door based on the panel and frame types.
@@ -26,6 +26,11 @@ door= doc.GetElement(doorid)
 ####
 ####
 ####
+logger = coreutils.logger.get_logger(__name__)
+#function for making families and types from excel. settings/ whatever file
+
+#better purge function- explicitly cull nested types
+
 # Main function for user input etc
 def main():
     # Prompt user to select a door
@@ -109,7 +114,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
             famFamily = family_temp.OwnerFamily
             #print ("51" , (famFamily))
             deleteType = famMan.CurrentType
-            #print(str(deleteType),  " delete bB")
+            print(str(deleteType),  " delete bB")
             typeMake = famMan.NewType(typeName)
             print("making new type...")       
 #these are the shared parameter GUIDs for the parameters we're looking for
@@ -151,7 +156,8 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                     #elif panel type
                             BamSyms = BamId.GetFamilySymbolIds()
                             for BamSym in BamSyms:
-                                famMan.Set(parr, BamSym)                    
+                                famMan.Set(parr, BamSym)  
+                    #elif frame types                  
                         elif str(pParr) == pfGU:
                             FamSyms = FamId.GetFamilySymbolIds()
                             for FamSym in FamSyms:
@@ -169,9 +175,14 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
         except Exception as e: 
             print("Error: {}".format(e))
             trans.RollBack()
+#purge unused nested families function
+   # collect_and_cull(family_temp)
+  #   purge_unused_nested_families(family_temp)
 #save as the family with new name and path
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
     print("saving new file...")
+
+    
 # Load the saved family back into the project
     print("loading new family into project...")
     with Transaction(doc, 'Load Family') as trans:
@@ -257,6 +268,119 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
                     break  # Exit after processing the first symbol
                 break  # Exit after finding the family
         trans.Commit()
+
+
+
+
+
+def purge_unused_nested_families(family_doc):
+    logger = script.get_logger()
+    output = script.get_output()
+    
+    # Start a transaction in the family document
+    t = Transaction(family_doc, 'Purge Unused Nested Families')
+    t.Start()
+    
+    try:
+         #Get a list of all family type parameter values
+        val_list = []
+        for param in family_doc.FamilyManager.Parameters:
+            if param.Definition.ParameterGroup == BuiltInParameterGroup.PG_IDENTITY_DATA and param.StorageType == DB.StorageType.ElementId:
+                for type in family_doc.FamilyManager.Types:
+                    family_doc.FamilyManager.CurrentType = type
+                    val = family_doc.FamilyManager.get_Parameter(param.Definition).Id
+                    print(val)
+                    if val.IntegerValue > 0:  # Ensure it's a valid ElementId
+                        val_list.append(val)
+        
+        # Get all nested families
+        nested_families = FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Doors).WhereElementIsElementType()
+
+        print(str(nested_families))
+
+        delete_list = []
+        # Delete nested families not in val_list
+        for nested_family in nested_families:
+            if nested_family:
+                par_fam = nested_family.Family
+                if (nested_family.Id not in val_list):
+                    if nested_family.Id not in delete_list:
+
+                        delete_list.append(par_fam.Id)
+
+        print(delete_list)
+        for delete_me in delete_list:
+            try:
+                family_doc.Delete(delete_me)
+            except Exception as e:
+                logger.warning("Could not delete family '" + delete_me + "': " + str(e))
+                continue
+       # remove_action("Remove unused nested families", "action_cat",
+       #           delete_list, family_doc,
+        #          validity_func=None)
+        t.Commit()
+        output.print_md("### Purge Completed Successfully")
+    except Exception as e:
+        t.RollBack()
+        logger.error("Error occurred: {}".format(str(e)))
+
+# Note: This function expects a family document (FamilyDoc), not the project document.
+# You must open a family document in the family editor to use this function.
+
+##
+##
+## Another attempt at a purge function, try it from another way
+
+def collect_and_cull(family_doc):
+    #inputs? family_doc
+    with Transaction(family_doc, 'Make Type and set Values') as t:
+        try:
+            t.Start()
+            #famMan = family_doc.FamilyManager
+    #collect all of the parameters that can have type values
+            del_fams = []
+            used_fams = []
+        # Collect IDs of all nested families that are in use
+            for a in FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Doors).WhereElementIsNotElementType():
+                type_a = a.GetTypeId()
+                if type_a not in used_fams:
+                    used_fams.append(type_a)
+        #make a set
+#            used_families_ids = set()
+#            #iterate through parameters
+#            for param in (famMan.GetParameters()):
+#                #if the storage type of the parameter is an element ID,
+#                if param.StorageType == DB.StorageType.ElementId:
+#                    #for each type in the family
+#                    for type in famMan.Types:
+#                        #collect the values in these parameters
+#                        val = famMan.GetParameter(param).AsElementId()
+#                        if val.IntegerValue > 0:  # Valid ElementId
+#                            used_families_ids.add(val)
+#           print(used_families_ids)                
+    #collect door family symbols in project
+            for b in  FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Doors).WhereElementIsElementType():
+                type_b = b.Id
+                if type_b not in used_fams:
+                    del_fams.append(type_b)
+
+            for delete_me in del_fams:
+                try:
+                    print(delete_me)
+                    family_doc.Delete(delete_me)
+                    
+                except Exception as e:
+                    logger.warning("Could not delete family '" + delete_me + "': " + str(e))
+                continue
+
+            
+            t.Commit()
+    #any not on current type value list are up for deletion
+            print ("used" + str(used_fams))
+            print ("delete"  + str(del_fams))
+        except Exception as e:
+            t.RollBack()
+            logger.error("Error occurred: " + str(e))
 
 
 def call_purge(family_name):
