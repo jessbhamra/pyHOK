@@ -10,6 +10,7 @@ import tempfile
 import os
 import clr
 import System
+from System.Collections.Generic import List
 
 __context__ = 'Doors'
 
@@ -171,6 +172,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                 typeDel = famMan.DeleteCurrentType()  
                 if typeDel:
                     print("Deleting embrionic type...")
+                    famMan.CurrentType = typeMake
                 trans.Commit()
         except Exception as e: 
             print("Error: {}".format(e))
@@ -182,7 +184,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
     print("saving new file...")
 
-    collect_and_cull(family_temp)
+    purge_perf_adv(family_temp)
 # Load the saved family back into the project
     print("loading new family into project...")
     with Transaction(doc, 'Load Family') as trans:
@@ -340,19 +342,26 @@ def collect_and_cull(family_doc):
     #collect all of the parameters that can have type values
             del_fams = []
             used_fams = []
+            del_fam_fams = []
         # Collect IDs of all nested families that are in use
+
+        #may need a better collector of things
+
             for a in FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Doors).WhereElementIsNotElementType():
                 type_a = a.GetTypeId()
                 if type_a not in used_fams:
                     used_fams.append(type_a)
 
 
-####THIS ALMOST DOES IT, EXCEPT IT DELTES THE TYPES NOT THE PARENT FAMS BUT VERY CLOSE
+####THIS ALMOST DOES IT but something gets weird
     #collect door family symbols in project
             for b in  FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Doors).WhereElementIsElementType():
                 type_b = b.Id
-                if type_b not in used_fams:
-                    del_fams.append(type_b)
+                type_b_fam = b.Family
+                if type_b not in used_fams and (type_b_fam.Id not in used_fams):
+                    del_fams.append(type_b_fam.Id)
+                #if type_b_fam not in del_fams:
+                   # del_fams.append(type_b_fam.Id)
 
             for delete_me in del_fams:
                 try:
@@ -360,7 +369,7 @@ def collect_and_cull(family_doc):
                     family_doc.Delete(delete_me)
                     
                 except Exception as e:
-                    logger.warning("Could not delete family '" + delete_me + "': " + str(e))
+                    logger.warning("Could not delete family" + (str(delete_me))  + (str(e)))
                 continue
 
             
@@ -430,7 +439,66 @@ def purgeIt():
             )
     __revit__.PostCommand(cid_PurgeUnused)
 
+def GetPurgeableElements(family_temp, rule_id_list):
+    #A constant 
+    PURGE_GUID = "e8c63650-70b7-435a-9010-ec97660c1bda"
+    failure_messages = DB.PerformanceAdviser.GetPerformanceAdviser().ExecuteRules(family_temp, rule_id_list)
+    if failure_messages.Count > 0:
+        purgeable_element_ids = failure_messages[0].GetFailingElements()
+        return purgeable_element_ids
+    #A generic list of PerformanceAdviserRuleIds as required by the ExecuteRules method
+    rule_id_list = [DB.PerformanceAdviserRuleId]
 
+#Iterating through all PerformanceAdviser rules looking to find that which matches PURGE_GUID
+    for rule_id in DB.PerformanceAdviser.GetPerformanceAdviser().GetAllRuleIds():
+        if str(rule_id.Guid) == PURGE_GUID:
+            rule_id_list.Add(rule_id)
+            break
+
+#Attempting to retrieve the elements which can be purged
+    purgeable_element_ids = GetPurgeableElements(family_temp, rule_id_list)
+
+    if purgeable_element_ids != None:
+        purgeable_elements = [Document.GetElement(id) for id in purgeable_element_ids]
+        OUT = purgeable_elements, purgeable_element_ids
+    else:
+        OUT = "No elements left to purge"
+
+def purge_perf_adv(family_doc):
+    purgeGuid = 'e8c63650-70b7-435a-9010-ec97660c1bda'
+    purgableElementIds = []
+    performanceAdviser = DB.PerformanceAdviser.GetPerformanceAdviser()
+    guid = System.Guid(purgeGuid)
+    ruleId = None
+    allRuleIds = performanceAdviser.GetAllRuleIds()
+    for rule in allRuleIds:
+    # Finds the PerformanceAdviserRuleId for the purge command
+        if str(rule.Guid) == purgeGuid:
+            ruleId = rule
+    ruleIds = List[DB.PerformanceAdviserRuleId]([ruleId])
+    for i in range(4):
+    # Executes the purge
+        failureMessages = performanceAdviser.ExecuteRules(family_doc, ruleIds)
+        if failureMessages.Count > 0:
+        # Retreives the elements
+            purgableElementIds = failureMessages[0].GetFailingElements()
+    print(purgableElementIds)
+# Deletes the elements
+    with Transaction(family_doc, 'Its purgin time') as trans:
+        trans.Start()
+        try:
+            family_doc.Delete(purgableElementIds)
+            print("489")
+
+        except:
+            for e in purgableElementIds:
+                try:
+                    family_doc.Delete(e)
+                    print("494")
+                except:
+                    print("496")
+                    pass
+        trans.Commit()        
 
 # Call the main function
 main()
