@@ -170,8 +170,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                 famMan.CurrentType = deleteType
                 typeDel = famMan.DeleteCurrentType()
                 famMan.CurrentType = typeMake  
-                if typeDel:
-                    print("Deleting embrionic type...")  
+                print("Deleting embrionic type...")  
                 trans.Commit()
         except Exception as e: 
             print("Error: {}".format(e))
@@ -290,21 +289,22 @@ def purge_perf_adv(family_doc):
         if failureMessages.Count > 0:
         # Retreives the elements
             purgableElementIds = failureMessages[0].GetFailingElements()
-    print(purgableElementIds)
+    #print(purgableElementIds)
 # Deletes the elements
+    print("it's purgin' time...")
     with Transaction(family_doc, 'Its purgin time') as s:
         s.Start()
         try:
             family_doc.Delete(purgableElementIds)
-            print("purge attempt 1")
+            #print("purge attempt 1")
 
         except:
             for e in purgableElementIds:
                 try:
                     family_doc.Delete(e)
-                    print("purge attempt 2")
+                    #print("purge attempt 2")
                 except:
-                    print("no purge")
+                    #print("no purge")
                     pass
         s.Commit()        
 
