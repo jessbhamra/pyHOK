@@ -20,7 +20,7 @@ ui = __revit__.ActiveUIDocument
 ####
 ####New part here to pick new, edit, or bulk
 doorm = ui.Selection.GetElementIds()
-# Get the element selection of the current document
+# Gets the element selection of the current document
 # replace this with something hard coded inside one of the other functions/ its own function to pull the right prototype door based on the panel and frame types.
 doorid = (doorm[0])
 door= doc.GetElement(doorid)
@@ -30,7 +30,6 @@ door= doc.GetElement(doorid)
 logger = coreutils.logger.get_logger(__name__)
 #function for making families and types from excel. settings/ whatever file
 
-#better purge function- explicitly cull nested types
 
 # Main function for user input etc
 def main():
@@ -328,8 +327,6 @@ def purge_unused_nested_families(family_doc):
 
 # Note: This function expects a family document (FamilyDoc), not the project document.
 # You must open a family document in the family editor to use this function.
-
-##
 ##
 ## Another attempt at a purge function, try it from another way
 
@@ -351,7 +348,6 @@ def collect_and_cull(family_doc):
                 type_a = a.GetTypeId()
                 if type_a not in used_fams:
                     used_fams.append(type_a)
-
 
 ####THIS ALMOST DOES IT but something gets weird
     #collect door family symbols in project
