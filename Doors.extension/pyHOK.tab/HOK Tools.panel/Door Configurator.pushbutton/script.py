@@ -16,96 +16,165 @@ __context__ = 'Doors'
 
 doc = __revit__.ActiveUIDocument.Document
 ui = __revit__.ActiveUIDocument
+
+#selection = [ doc.GetElement( elId ) for elId in __revit__.ActiveUIDocument.Selection.GetElementIds() ]
+#sel=[]
+#for i in selection:
+#    sel.append(i.Id)
+#ids=List[DB.ElementId](1)
+#ids.Add(sel[0]) 
+#selected = ui.Selection.SetElementIds(ids)
+
 ####
 ####
 ####New part here to pick new, edit, or bulk
-doorm = ui.Selection.GetElementIds()
+#doorm = ui.Selection.GetElementIds()
 # Gets the element selection of the current document
 # replace this with something hard coded inside one of the other functions/ its own function to pull the right prototype door based on the panel and frame types.
-doorid = (doorm[0])
-door= doc.GetElement(doorid)
+#doorid = (doorm[0])
+#door = doc.GetElement(doorid)
 ####
 ####
 ####
 logger = coreutils.logger.get_logger(__name__)
 #function for making families and types from excel. settings/ whatever file
+def settings(frame_name):
+    # Define a dictionary where the keys are frame types and the values are source family primitives
+    frame_to_primitive_mapping = {
+        "S01": "DoorConfigPrimative02",
+        "S02": "DoorConfigPrimative02",
+        "S03": "DoorConfigPrimative02",
+        "S18": "DoorConfigPrimativeSidelite01",
+        "S19": "DoorConfigPrimativeSidelite01",
+        "S20": "DoorConfigPrimativeSidelite01",
+        "S21": "DoorConfigPrimativeSidelite01",
+        "S22": "DoorConfigPrimativeSidelite01",
+        "S23": "DoorConfigPrimativeSidelite01",
+    }
+    file_path = "\\\\group\\hok\\FWR\\RESOURCES\\BIM-STAGING\\RVT-DRAFT\\Doors v2\\Security"
+    # Attempt to get the source family primitive for the given frame name
+    doorD = frame_to_primitive_mapping.get(frame_name)
 
-
+    if doorD:
+        print("The source family primitive for " + frame_name + " is " + doorD + ".")
+        return doorD  # Optionally return the door variable if needed elsewhere
+    else:
+        print("No action selected or action canceled.")
+        return None  # Return None or an appropriate value if the frame_name is not found
 # Main function for user input etc
 def main():
-    # Prompt user to select a door
-    class UserDetailsForm(WPFWindow):
-        def __init__(self, xaml_file_path):
-            WPFWindow.__init__(self, xaml_file_path)
-            self.btnSubmit.Click += self.on_submit
-            self.set_icon("C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\HOK.ico")
+    selected_action = prompt_door_action()
 
-        def on_submit(self, sender, e):
-            self.panel_type = self.txtPanelType.Text
-            self.frame_type = self.txtFrameType.Text
-            self.width = self.txtWidth.Text
-            self.height = self.txtHeight.Text
-            self.Close()
+    if selected_action == 'New Door':
+    # Prompt user to enter types in form
+        class UserDetailsForm(WPFWindow):
+            def __init__(self, xaml_file_path):
+                WPFWindow.__init__(self, xaml_file_path)
+                self.btnSubmit.Click += self.on_submit
+                self.set_icon("C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\HOK.ico")
+
+            def on_submit(self, sender, e):
+                self.panel_type = self.txtPanelType.Text
+                self.frame_type = self.txtFrameType.Text
+                self.width = self.txtWidth.Text
+                self.height = self.txtHeight.Text
+                self.Close()
 ### THIS NEEDS TO BE UPDATED ONCE WE HAVE A LOCATION FOR IT TO GO FOR DEPLOYMENT
 # Path to the XAML file
-    xaml_file_path = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
+        xaml_file_path = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
 
 # Create and show the form
-    form = UserDetailsForm(xaml_file_path)
-    form.show_dialog()
+        form = UserDetailsForm(xaml_file_path)
+        form.show_dialog()
 
 # After the form is closed, you can access the inputs
-    print(form.panel_type, form.frame_type, form.width, form.height)
-    panel_type = form.panel_type.upper()
-    frame_type = form.frame_type.upper()
-    width = form.width.upper()
-    height = form.height.upper()
-
+       
+        panel_type = form.panel_type.upper()
+        frame_type = form.frame_type.upper()
+        width = form.width.upper()
+        height = form.height.upper()
+        print(panel_type, frame_type, width, height)
 #If user doesn't give the right input, exit out 
 #of the program and/ or give them another chance to enter
 
+
+#door make a filt4ered element collecttor
+
 #format of family name
-    family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleFlush_HOK_I"))
+        family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleFlush_HOK_I"))
 
 # Convert width and height to Revit internal units (feet)
-    width = float(width) / 12.0
-    height = float(height) / 12.0
+        width = float(width) / 12.0
+        height = float(height) / 12.0
 
 #sort funtion - is this a new door or an edit to an existing door? somewhere decide what base file to start with. Where should these go?
 
 # if new, use save_as_new_family
+        save_as_new_family(family_name, panel_type, frame_type, width, height)
+
+
+
 
 #if edit, use edit_types_and_parameters
+    elif selected_action == 'Edit Existing Door':
+        print("edit_existing_door()")
 
-# Save the door as a new family and create family types
-    save_as_new_family(door, family_name, panel_type, frame_type, width, height)
+    elif selected_action == 'Bulk Add Door Families and Types':
+        print("bulk_add_doors()")
 
+    else:
+        print("No action selected or action canceled.")
 #Print success message
     print("HOK Door Configurator finished {} at {} on {}".format(family_name, coreutils.current_time(), coreutils.current_date()))
 
-#purge
+
+def prompt_door_action():
+    # Define the options to present to the user
+    options = ['New Door', 'Edit Existing Door', 'Bulk Add Door Families and Types']
+    
+    # Show the command switch window with the options
+    selected_option = forms.CommandSwitchWindow.show(options, message='Select Door Action')
+    
+    # Return the selected option
+    return selected_option
 
 # Function to save door as new family
-def save_as_new_family(door, family_name, panel_type, frame_type, width, height):
+def save_as_new_family(family_name, panel_type, frame_type, width, height):
 # Save the family with a new name
     temp_dir = tempfile.mkdtemp()
     family_path = os.path.join(temp_dir, family_name + ".rfa")
     backupf_path = os.path.join(temp_dir,"Backup")
 
+#run dictionary function to pull base family name
+    doorD = settings(frame_type)
+
+    if doorD:       
+        filCol = DB.FilteredElementCollector(doc)\
+                    .OfCategory(BuiltInCategory.OST_Doors).WhereElementIsElementType()
+# Iterate through the elements to find the one with the matching name
+        for el in filCol:
+            elFam = el.Family
+            print(elFam.Name)
+            if elFam.Name == doorD:
+                door = elFam
+                break
+    else: exit            
 # get the prototype door family
     #print (str(door))
     print("making a new family...")
-    fam_lam = DB.Element.GetValidTypes(door)
-    fam_nam = fam_lam[0]
-    family_type = (doc.GetElement(fam_nam))
-    fam_tpe = (family_type.Family)
-    print (str(fam_tpe)+"family")
+    #fam_lam = door
+    #fam_nam = fam_lam
+    #family_type = (doc.GetElement(door))
+    #fam_tpe = (door.Family)
+    print (str(family_name)+"family")
 
 # Edit Family to bring up the family editor
-    family_temp = (doc.EditFamily(fam_tpe))#EditFamily must be called OUTSIDE of a transaction
+    family_temp = (doc.EditFamily(door))#EditFamily must be called OUTSIDE of a transaction
 #make new type and assign values
     typeName = "{}x{}".format(int(width*12), int(height*12))
-
+    BamId = None
+    FamId = None                
+    FlamId = None
 #start a transaction and instantiate family manager
     with Transaction(family_temp, 'Make Type and set Values') as trans:
         try:
@@ -114,7 +183,7 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
             famFamily = family_temp.OwnerFamily
             #print ("51" , (famFamily))
             deleteType = famMan.CurrentType
-            print(str(deleteType),  " delete bB")
+            #print(str(deleteType),  " delete bB")
             typeMake = famMan.NewType(typeName)
             print("making new type...")       
 #these are the shared parameter GUIDs for the parameters we're looking for
@@ -123,18 +192,20 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
             pnGU = "8e89f65d-3ed9-45c8-9808-8c315dedadce" #PANEL 1
             pfGU = "b6930f0e-c0f5-432b-80ee-6c649f876cae" #FRAME
  #filtered element collector to grab nested door families
+            print("updating parameters...")
             nestFams = DB.FilteredElementCollector(family_temp)\
                 .OfClass(DB.Family).ToElements()
-            BamId = None
-            FamId = None                
-            FlamId = None
-            print("updating parameters...")
             for FamThis in nestFams:
+                print("type:{}".format(FamThis.Name))
                 if FamThis.Name == panel_type:
                     BamId = FamThis
+                    print("BamId:   " + (str(BamId)))
+                    
                 elif FamThis.Name == frame_type:
                     FamId = FamThis
-                else: FlamId = FamThis
+                    print("FamId:   " + (str(FamId)))
+                else: 
+                    FlamId = FamThis
 #If a new type was made successfully
             if typeMake:
 #get the set of Family parameters and iterate through them
@@ -163,9 +234,9 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
                             for FamSym in FamSyms:
                                 famMan.Set(parr, (FamSym)) 
         #delete unused nested families
-                    FlamSyms = FlamId.GetFamilySymbolIds()
-                    for FlamSym in FlamSyms: 
-                        FlamSId = family_temp.GetElement(FlamSym)
+                    #FlamSyms = FlamId.GetFamilySymbolIds()
+                   # for FlamSym in FlamSyms: 
+                   #     FlamSId = family_temp.GetElement(FlamSym)
         #set delete type as current type
                 famMan.CurrentType = deleteType
                 typeDel = famMan.DeleteCurrentType()
@@ -175,14 +246,13 @@ def save_as_new_family(door, family_name, panel_type, frame_type, width, height)
         except Exception as e: 
             print("Error: {}".format(e))
             trans.RollBack()
-#purge unused nested families function
-   # collect_and_cull(family_temp)
-  #   purge_unused_nested_families(family_temp)
+
+
 #save as the family with new name and path
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
     print("saving new file...")
-
-    purge_perf_adv(family_temp)
+#purge unused nested families function
+   # purge_perf_adv(family_temp)
 # Load the saved family back into the project
     print("loading new family into project...")
     with Transaction(doc, 'Load Family') as trans:
@@ -268,8 +338,6 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
                     break  # Exit after processing the first symbol
                 break  # Exit after finding the family
         trans.Commit()
-
-
 
 def purge_perf_adv(family_doc):
     purgeGuid = 'e8c63650-70b7-435a-9010-ec97660c1bda'
