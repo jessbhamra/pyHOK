@@ -11,32 +11,22 @@ import os
 import clr
 import System
 from System.Collections.Generic import List
+import csv
 
 __context__ = 'Doors'
-
 doc = __revit__.ActiveUIDocument.Document
 ui = __revit__.ActiveUIDocument
-
-#selection = [ doc.GetElement( elId ) for elId in __revit__.ActiveUIDocument.Selection.GetElementIds() ]
-#sel=[]
-#for i in selection:
-#    sel.append(i.Id)
-#ids=List[DB.ElementId](1)
-#ids.Add(sel[0]) 
-#selected = ui.Selection.SetElementIds(ids)
-
-####
-####
-####New part here to pick new, edit, or bulk
-#doorm = ui.Selection.GetElementIds()
-# Gets the element selection of the current document
-# replace this with something hard coded inside one of the other functions/ its own function to pull the right prototype door based on the panel and frame types.
-#doorid = (doorm[0])
-#door = doc.GetElement(doorid)
-####
-####
-####
 logger = coreutils.logger.get_logger(__name__)
+
+def load_door_configs_from_csv(csv_file_path):
+    door_configs = []
+    with open(csv_file_path, mode='r', newline='') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            if row:  # Ensure the row is not empty
+                # Convert width and height to integers before appending
+                door_configs.append((row[0], row[1], int(row[2]), int(row[3])))
+    return door_configs
 #function for making families and types from excel. settings/ whatever file
 def settings(frame_name):
     # Define a dictionary where the keys are frame types and the values are source family primitives
@@ -71,6 +61,7 @@ def main():
             def __init__(self, xaml_file_path):
                 WPFWindow.__init__(self, xaml_file_path)
                 self.btnSubmit.Click += self.on_submit
+                ####replace this file path
                 self.set_icon("C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\HOK.ico")
 
             def on_submit(self, sender, e):
@@ -107,30 +98,85 @@ def main():
         width = float(width) / 12.0
         height = float(height) / 12.0
 
-#sort funtion - is this a new door or an edit to an existing door? somewhere decide what base file to start with. Where should these go?
-
+#sort funtion - is this a new door or an edit to an existing door or batch? 
 # if new, use save_as_new_family
         save_as_new_family(family_name, panel_type, frame_type, width, height)
-
-
-
 
 #if edit, use edit_types_and_parameters
     elif selected_action == 'Edit Existing Door':
         print("edit_existing_door()")
 
-    elif selected_action == 'Bulk Add Door Families and Types':
-        print("bulk_add_doors()")
+    elif selected_action == 'Batch Add Door Families and Types':
+        
+        door_configs = [
+        ("DF", "S01", 36, 84),
+        ("DF", "S02", 36, 84),
+        ("DF", "S03", 36, 84),
+        ("DF", "S18", 36, 84),
+        ("DF", "S19", 36, 84),
+        ("DF", "S20", 36, 84),
+        ("DF", "S21", 36, 84)
+        ("DF", "S22", 36, 84),
+        ("DF", "S23", 36, 84),
+        ("DFG", "S01", 36, 84),
+        ("DFG", "S02", 36, 84),
+        ("DFG", "S03", 36, 84),
+        ("DFG", "S18", 36, 84),
+        ("DFG", "S19", 36, 84),
+        ("DFG", "S20", 36, 84),
+        ("DFG", "S21", 36, 84),
+        ("DFG", "S22", 36, 84),
+        ("DFG", "S23", 36, 84),
+        ("DHG", "S01", 36, 84),
+        ("DHG", "S02", 36, 84),
+        ("DHG", "S03", 36, 84),
+        ("DHG", "S18", 36, 84),
+        ("DHG", "S19", 36, 84),
+        ("DHG", "S20", 36, 84),
+        ("DHG", "S21", 36, 84),
+        ("DHG", "S22", 36, 84),
+        ("DHG", "S23", 36, 84),
+        ("DN", "S01", 36, 84),
+        ("DN", "S02", 36, 84),
+        ("DN", "S03", 36, 84),
+        ("DN", "S18", 36, 84),
+        ("DN", "S19", 36, 84),
+        ("DN", "S20", 36, 84),
+        ("DN", "S21", 36, 84),
+        ("DN", "S22", 36, 84),
+        ("DN", "S23", 36, 84),
+        ("DG", "S01", 36, 84),
+        ("DG", "S02", 36, 84),
+        ("DG", "S03", 36, 84),
+        ("DG", "S18", 36, 84),
+        ("DG", "S19", 36, 84),
+        ("DG", "S20", 36, 84),
+        ("DG", "S21", 36, 84),
+        ("DG", "S22", 36, 84),
+        ("DG", "S23", 36, 84)]
+        
+        for config in door_configs:
+        # Unpack the configuration tuple into variables
+            panel_type, frame_type, width, height = config
+                #format of family name
+            family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleFlush_HOK_I"))
+
+# Convert width and height to Revit internal units (feet)
+            width = float(width) / 12.0
+            height = float(height) / 12.0
+        # Call save_as_new_family with the unpacked parameters
+            save_as_new_family(family_name, panel_type, frame_type, width, height)
+#            print(f"Processed {family_name} with panel {panel_type}, frame {frame_type}, width {width}, height {height}.")
+            print("Processed " + family_name + " with panel " + panel_type + ", frame " + frame_type + ", width " + str(width) + ", height " + str(height) + ".")
 
     else:
         print("No action selected or action canceled.")
 #Print success message
     print("HOK Door Configurator finished {} at {} on {}".format(family_name, coreutils.current_time(), coreutils.current_date()))
 
-
 def prompt_door_action():
     # Define the options to present to the user
-    options = ['New Door', 'Edit Existing Door', 'Bulk Add Door Families and Types']
+    options = ['New Door', 'Edit Existing Door', 'Batch Add Door Families and Types']
     
     # Show the command switch window with the options
     selected_option = forms.CommandSwitchWindow.show(options, message='Select Door Action')
@@ -144,6 +190,8 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     temp_dir = tempfile.mkdtemp()
     family_path = os.path.join(temp_dir, family_name + ".rfa")
     backupf_path = os.path.join(temp_dir,"Backup")
+    final_path =  os.path.join("B:\\Revit Projects\\security doors temp\\try\\", family_name + ".rfa")
+##This part below chooses whioch primitive door family to start from based on user frame type
 
 #run dictionary function to pull base family name
     doorD = settings(frame_type)
@@ -154,19 +202,14 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
 # Iterate through the elements to find the one with the matching name
         for el in filCol:
             elFam = el.Family
-            print(elFam.Name)
+           # print(elFam.Name)
             if elFam.Name == doorD:
                 door = elFam
                 break
     else: exit            
-# get the prototype door family
-    #print (str(door))
+
     print("making a new family...")
-    #fam_lam = door
-    #fam_nam = fam_lam
-    #family_type = (doc.GetElement(door))
-    #fam_tpe = (door.Family)
-    print (str(family_name)+"family")
+    print (str(family_name))
 
 # Edit Family to bring up the family editor
     family_temp = (doc.EditFamily(door))#EditFamily must be called OUTSIDE of a transaction
@@ -196,14 +239,12 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
             nestFams = DB.FilteredElementCollector(family_temp)\
                 .OfClass(DB.Family).ToElements()
             for FamThis in nestFams:
-                print("type:{}".format(FamThis.Name))
+                #print("type:{}".format(FamThis.Name))
                 if FamThis.Name == panel_type:
                     BamId = FamThis
-                    print("BamId:   " + (str(BamId)))
-                    
+
                 elif FamThis.Name == frame_type:
                     FamId = FamThis
-                    print("FamId:   " + (str(FamId)))
                 else: 
                     FlamId = FamThis
 #If a new type was made successfully
@@ -233,10 +274,7 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
                             FamSyms = FamId.GetFamilySymbolIds()
                             for FamSym in FamSyms:
                                 famMan.Set(parr, (FamSym)) 
-        #delete unused nested families
-                    #FlamSyms = FlamId.GetFamilySymbolIds()
-                   # for FlamSym in FlamSyms: 
-                   #     FlamSId = family_temp.GetElement(FlamSym)
+
         #set delete type as current type
                 famMan.CurrentType = deleteType
                 typeDel = famMan.DeleteCurrentType()
@@ -252,8 +290,10 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
     print("saving new file...")
 #purge unused nested families function
-   # purge_perf_adv(family_temp)
+    purge_perf_adv(family_temp)
 # Load the saved family back into the project
+    family_temp.SaveAs(final_path, DB.SaveAsOptions())
+
     print("loading new family into project...")
     with Transaction(doc, 'Load Family') as trans:
         trans.Start()
