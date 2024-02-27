@@ -18,15 +18,15 @@ doc = __revit__.ActiveUIDocument.Document
 ui = __revit__.ActiveUIDocument
 logger = coreutils.logger.get_logger(__name__)
 
-def load_door_configs_from_csv(csv_file_path):
-    door_configs = []
-    with open(csv_file_path, mode='r', newline='') as file:
-        reader = csv.reader(file)
-        for row in reader:
-            if row:  # Ensure the row is not empty
+#def load_door_configs_from_csv(csv_file_path):
+#    door_configs = []
+#    with open(csv_file_path, mode='r', newline='') as file:
+#        reader = csv.reader(file)
+#        for row in reader:
+#            if row:  # Ensure the row is not empty
                 # Convert width and height to integers before appending
-                door_configs.append((row[0], row[1], int(row[2]), int(row[3])))
-    return door_configs
+#                door_configs.append((row[0], row[1], int(row[2]), int(row[3])))
+#    return door_configs
 #function for making families and types from excel. settings/ whatever file
 def settings(frame_name):
     # Define a dictionary where the keys are frame types and the values are source family primitives
@@ -88,7 +88,8 @@ def main():
 #If user doesn't give the right input, exit out 
 #of the program and/ or give them another chance to enter
 
-
+#check to see if the info enters matches an existing door in the project. 
+# #If yes, then check type, and if a new type, go to the edit function
 #door make a filt4ered element collecttor
 
 #format of family name
@@ -107,7 +108,7 @@ def main():
         print("edit_existing_door()")
 
     elif selected_action == 'Batch Add Door Families and Types':
-        
+        door_configs = []
         door_configs = [
         ("DF", "S01", 36, 84),
         ("DF", "S02", 36, 84),
@@ -115,7 +116,7 @@ def main():
         ("DF", "S18", 36, 84),
         ("DF", "S19", 36, 84),
         ("DF", "S20", 36, 84),
-        ("DF", "S21", 36, 84)
+        ("DF", "S21", 36, 84),
         ("DF", "S22", 36, 84),
         ("DF", "S23", 36, 84),
         ("DFG", "S01", 36, 84),
@@ -153,7 +154,8 @@ def main():
         ("DG", "S20", 36, 84),
         ("DG", "S21", 36, 84),
         ("DG", "S22", 36, 84),
-        ("DG", "S23", 36, 84)]
+        ("DG", "S23", 36, 84),
+        ]
         
         for config in door_configs:
         # Unpack the configuration tuple into variables
@@ -310,7 +312,9 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     os.rmdir(temp_dir)
 
 def edit_types_and_params(family_name, panel_type, frame_type, width, height):
-# Find the loaded family by name to work with its symbols
+
+#select family to make symbols/edits for
+
 # open a transaction to make changes to things in Revit
     with Transaction(doc, 'Create New Family Type') as trans:
         trans.Start()
@@ -339,41 +343,41 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
                     
                    #Set the PANEL family Type parameter to the nested door family 
                    # that matches panel_type
-                    paraList = new_symbol.GetParameters('PANEL 1')
-                    paraId = (paraList[0])
-                    famTypes = elem.GetFamilyTypeParameterValues(paraId.Id)
-                    print (famTypes)
-                    BamId = None
-                    for famIYam in famTypes:
-                        famZam = (doc.GetElement(famIYam))
-                        if famZam.Name == panel_type:
-                            print (famIYam)
-                            BamId = famIYam
-                            break
-                    BamElem = (doc.GetElement(BamId))
-                    new_symbol.LookupParameter('PANEL 1').Set(BamElem.Id)
-
+#                    paraList = new_symbol.GetParameters('PANEL 1')
+#                    paraId = (paraList[0])
+#                    famTypes = elem.GetFamilyTypeParameterValues(paraId.Id)
+   #                 print (famTypes)
+ ##                   BamId = None
+   #                 for famIYam in famTypes:
+    #                    famZam = (doc.GetElement(famIYam))
+     #                   if famZam.Name == panel_type:
+      #                      print (famIYam)
+       #                     BamId = famIYam
+        #                    break
+  #                  BamElem = (doc.GetElement(BamId))
+   #                 new_symbol.LookupParameter('PANEL 1').Set(BamElem.Id)
+#
                    #Set the FRAME family Type parameter to the nested door family 
                    # that matches frame_type
-                    faraList = new_symbol.GetParameters('FRAME')
-                    faraId = (faraList[0])
-                    framTypes = elem.GetFamilyTypeParameterValues(faraId.Id)
+ #                   faraList = new_symbol.GetParameters('FRAME')
+  #                  faraId = (faraList[0])
+   #                 framTypes = elem.GetFamilyTypeParameterValues(faraId.Id)
                     #print (framTypes)
-                    FramId = None
-                    for famIFam in framTypes:
-                        famFam = (doc.GetElement(famIFam))
-                        if famFam.Name == frame_type:
-                            print (famIFam)
-                            FramId = famIFam
-                            break
-                    FramElem = (doc.GetElement(FramId))
-                    new_symbol.LookupParameter('FRAME').Set(FramElem.Id)
+    #                FramId = None
+     #               for famIFam in framTypes:
+      #                  famFam = (doc.GetElement(famIFam))
+       #                 if famFam.Name == frame_type:
+        #                    print (famIFam)
+         #                   FramId = famIFam
+          #                  break
+           #         FramElem = (doc.GetElement(FramId))
+            #        new_symbol.LookupParameter('FRAME').Set(FramElem.Id)
 ###########try to do this another way using Type instead of symbol
                     # Rename the family symbol to reflect the new dimensions in inches
                     new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
 #this may have to be done in the purge function instead
                     #delete the Delete type
-                    delSym = doc.Delete(symbol_id)
+                    #delSym = doc.Delete(symbol_id)
     # call purge
                     break  # Exit after processing the first symbol
                 break  # Exit after finding the family
@@ -410,9 +414,9 @@ def purge_perf_adv(family_doc):
             for e in purgableElementIds:
                 try:
                     family_doc.Delete(e)
-                    #print("purge attempt 2")
+                        #print("purge attempt 2")
                 except:
-                    #print("no purge")
+                        #print("no purge")
                     pass
         s.Commit()        
 
