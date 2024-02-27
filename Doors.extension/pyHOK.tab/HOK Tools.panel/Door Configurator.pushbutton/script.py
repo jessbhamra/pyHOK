@@ -13,20 +13,20 @@ import System
 from System.Collections.Generic import List
 import csv
 
-__context__ = 'Doors'
+#__context__ = 'Doors'
 doc = __revit__.ActiveUIDocument.Document
 ui = __revit__.ActiveUIDocument
 logger = coreutils.logger.get_logger(__name__)
 
-#def load_door_configs_from_csv(csv_file_path):
-#    door_configs = []
-#    with open(csv_file_path, mode='r', newline='') as file:
-#        reader = csv.reader(file)
-#        for row in reader:
-#            if row:  # Ensure the row is not empty
+def load_door_configs_from_csv(csv_file_path):
+    door_configs = []
+    with open(csv_file_path, mode='r') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            if row:  # Ensure the row is not empty
                 # Convert width and height to integers before appending
-#                door_configs.append((row[0], row[1], int(row[2]), int(row[3])))
-#    return door_configs
+                door_configs.append((row[0], row[1], int(row[2]), int(row[3])))
+    return door_configs
 #function for making families and types from excel. settings/ whatever file
 def settings(frame_name):
     # Define a dictionary where the keys are frame types and the values are source family primitives
@@ -61,7 +61,7 @@ def main():
             def __init__(self, xaml_file_path):
                 WPFWindow.__init__(self, xaml_file_path)
                 self.btnSubmit.Click += self.on_submit
-                ####replace this file path
+####replace this file path
                 self.set_icon("C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\HOK.ico")
 
             def on_submit(self, sender, e):
@@ -93,7 +93,7 @@ def main():
 #door make a filt4ered element collecttor
 
 #format of family name
-        family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleFlush_HOK_I"))
+        family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleSwing_HOK_I"))
 
 # Convert width and height to Revit internal units (feet)
         width = float(width) / 12.0
@@ -108,67 +108,26 @@ def main():
         print("edit_existing_door()")
 
     elif selected_action == 'Batch Add Door Families and Types':
-        door_configs = []
-        door_configs = [
-        ("DF", "S01", 36, 84),
-        ("DF", "S02", 36, 84),
-        ("DF", "S03", 36, 84),
-        ("DF", "S18", 36, 84),
-        ("DF", "S19", 36, 84),
-        ("DF", "S20", 36, 84),
-        ("DF", "S21", 36, 84),
-        ("DF", "S22", 36, 84),
-        ("DF", "S23", 36, 84),
-        ("DFG", "S01", 36, 84),
-        ("DFG", "S02", 36, 84),
-        ("DFG", "S03", 36, 84),
-        ("DFG", "S18", 36, 84),
-        ("DFG", "S19", 36, 84),
-        ("DFG", "S20", 36, 84),
-        ("DFG", "S21", 36, 84),
-        ("DFG", "S22", 36, 84),
-        ("DFG", "S23", 36, 84),
-        ("DHG", "S01", 36, 84),
-        ("DHG", "S02", 36, 84),
-        ("DHG", "S03", 36, 84),
-        ("DHG", "S18", 36, 84),
-        ("DHG", "S19", 36, 84),
-        ("DHG", "S20", 36, 84),
-        ("DHG", "S21", 36, 84),
-        ("DHG", "S22", 36, 84),
-        ("DHG", "S23", 36, 84),
-        ("DN", "S01", 36, 84),
-        ("DN", "S02", 36, 84),
-        ("DN", "S03", 36, 84),
-        ("DN", "S18", 36, 84),
-        ("DN", "S19", 36, 84),
-        ("DN", "S20", 36, 84),
-        ("DN", "S21", 36, 84),
-        ("DN", "S22", 36, 84),
-        ("DN", "S23", 36, 84),
-        ("DG", "S01", 36, 84),
-        ("DG", "S02", 36, 84),
-        ("DG", "S03", 36, 84),
-        ("DG", "S18", 36, 84),
-        ("DG", "S19", 36, 84),
-        ("DG", "S20", 36, 84),
-        ("DG", "S21", 36, 84),
-        ("DG", "S22", 36, 84),
-        ("DG", "S23", 36, 84),
-        ]
-        
+
+       # Specify the path to your CSV file
+        csv_file_path = "B:\\Revit Projects\\_python tests\\door_configs2.csv"  # Update this path
+
+# Load door configurations from the CSV file
+        door_configs = load_door_configs_from_csv(csv_file_path)
+
+# Now you can iterate over door_configs as before
         for config in door_configs:
         # Unpack the configuration tuple into variables
             panel_type, frame_type, width, height = config
                 #format of family name
-            family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleFlush_HOK_I"))
+            family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleSwing_HOK_I"))
 
 # Convert width and height to Revit internal units (feet)
             width = float(width) / 12.0
             height = float(height) / 12.0
         # Call save_as_new_family with the unpacked parameters
             save_as_new_family(family_name, panel_type, frame_type, width, height)
-#            print(f"Processed {family_name} with panel {panel_type}, frame {frame_type}, width {width}, height {height}.")
+
             print("Processed " + family_name + " with panel " + panel_type + ", frame " + frame_type + ", width " + str(width) + ", height " + str(height) + ".")
 
     else:
@@ -192,7 +151,7 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     temp_dir = tempfile.mkdtemp()
     family_path = os.path.join(temp_dir, family_name + ".rfa")
     backupf_path = os.path.join(temp_dir,"Backup")
-    final_path =  os.path.join("B:\\Revit Projects\\security doors temp\\try\\", family_name + ".rfa")
+    final_path =  os.path.join("B:\\Revit Projects\\security doors temp\\try2\\", family_name + ".rfa")
 ##This part below chooses whioch primitive door family to start from based on user frame type
 
 #run dictionary function to pull base family name
@@ -341,44 +300,10 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
                     new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
                     new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
                     
-                   #Set the PANEL family Type parameter to the nested door family 
-                   # that matches panel_type
-#                    paraList = new_symbol.GetParameters('PANEL 1')
-#                    paraId = (paraList[0])
-#                    famTypes = elem.GetFamilyTypeParameterValues(paraId.Id)
-   #                 print (famTypes)
- ##                   BamId = None
-   #                 for famIYam in famTypes:
-    #                    famZam = (doc.GetElement(famIYam))
-     #                   if famZam.Name == panel_type:
-      #                      print (famIYam)
-       #                     BamId = famIYam
-        #                    break
-  #                  BamElem = (doc.GetElement(BamId))
-   #                 new_symbol.LookupParameter('PANEL 1').Set(BamElem.Id)
-#
-                   #Set the FRAME family Type parameter to the nested door family 
-                   # that matches frame_type
- #                   faraList = new_symbol.GetParameters('FRAME')
-  #                  faraId = (faraList[0])
-   #                 framTypes = elem.GetFamilyTypeParameterValues(faraId.Id)
-                    #print (framTypes)
-    #                FramId = None
-     #               for famIFam in framTypes:
-      #                  famFam = (doc.GetElement(famIFam))
-       #                 if famFam.Name == frame_type:
-        #                    print (famIFam)
-         #                   FramId = famIFam
-          #                  break
-           #         FramElem = (doc.GetElement(FramId))
-            #        new_symbol.LookupParameter('FRAME').Set(FramElem.Id)
-###########try to do this another way using Type instead of symbol
+
                     # Rename the family symbol to reflect the new dimensions in inches
                     new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
-#this may have to be done in the purge function instead
-                    #delete the Delete type
-                    #delSym = doc.Delete(symbol_id)
-    # call purge
+
                     break  # Exit after processing the first symbol
                 break  # Exit after finding the family
         trans.Commit()
