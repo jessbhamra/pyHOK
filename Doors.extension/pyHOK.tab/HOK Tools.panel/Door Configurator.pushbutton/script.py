@@ -110,7 +110,7 @@ def main():
     elif selected_action == 'Batch Add Door Families and Types':
 
        # Specify the path to your CSV file
-        csv_file_path = "B:\\Revit Projects\\_python tests\\door_configs2.csv"  # Update this path
+        csv_file_path = "B:\\Revit Projects\\_python tests\\door_configs3.csv"  # Update this path
 
 # Load door configurations from the CSV file
         door_configs = load_door_configs_from_csv(csv_file_path)
@@ -151,7 +151,7 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     temp_dir = tempfile.mkdtemp()
     family_path = os.path.join(temp_dir, family_name + ".rfa")
     backupf_path = os.path.join(temp_dir,"Backup")
-    final_path =  os.path.join("B:\\Revit Projects\\security doors temp\\try2\\", family_name + ".rfa")
+    final_path =  os.path.join("B:\\Revit Projects\\security doors temp\\try\\", family_name + ".rfa")
 ##This part below chooses whioch primitive door family to start from based on user frame type
 
 #run dictionary function to pull base family name
@@ -240,12 +240,11 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
                 famMan.CurrentType = deleteType
                 typeDel = famMan.DeleteCurrentType()
                 famMan.CurrentType = typeMake  
-                print("Deleting embrionic type...")  
+                print("deleting embrionic type...")  
                 trans.Commit()
         except Exception as e: 
             print("Error: {}".format(e))
             trans.RollBack()
-
 
 #save as the family with new name and path
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
