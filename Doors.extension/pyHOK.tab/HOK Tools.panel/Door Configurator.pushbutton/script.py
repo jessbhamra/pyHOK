@@ -52,9 +52,16 @@ def settings(frame_name):
         print("No action selected or action canceled.")
         return None  # Return None or an appropriate value if the frame_name is not found
 # Main function for user input etc
+def check_fam(family_name, doc):
+    collector = FilteredElementCollector(doc).OfClass(DB.Family)
+    
+    for family in collector:
+        if family.Name == family_name:
+            return True  # Family exists
+    return False  # Family does not exist
+
 def main():
     selected_action = prompt_door_action()
-
     if selected_action == 'New Door':
     # Prompt user to enter types in form
         class UserDetailsForm(WPFWindow):
@@ -73,63 +80,48 @@ def main():
 ### THIS NEEDS TO BE UPDATED ONCE WE HAVE A LOCATION FOR IT TO GO FOR DEPLOYMENT
 # Path to the XAML file
         xaml_file_path = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
-
 # Create and show the form
         form = UserDetailsForm(xaml_file_path)
         form.show_dialog()
-
-# After the form is closed, you can access the inputs
-       
+# After the form is closed, access the inputs
         panel_type = form.panel_type.upper()
         frame_type = form.frame_type.upper()
         width = form.width.upper()
         height = form.height.upper()
         print(panel_type, frame_type, width, height)
-#If user doesn't give the right input, exit out 
-#of the program and/ or give them another chance to enter
-
-#check to see if the info enters matches an existing door in the project. 
-# #If yes, then check type, and if a new type, go to the edit function
-#door make a filt4ered element collecttor
-
-#format of family name
+        #format of family name
         family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleSwing_HOK_I"))
-
 # Convert width and height to Revit internal units (feet)
         width = float(width) / 12.0
         height = float(height) / 12.0
-
-#sort funtion - is this a new door or an edit to an existing door or batch? 
+#check to see if the info enters matches an existing door in the project. 
+# #If yes, then check type, and if a new type, go to the edit function
+        if check_fam(family_name, doc):
+           # edit_types_and_params(family_name, panel_type, frame_type, width, height)  # Call function to edit an existing door
+           print("edit_existing_door()")
+        else:
 # if new, use save_as_new_family
-        save_as_new_family(family_name, panel_type, frame_type, width, height)
-
+            save_as_new_family(family_name, panel_type, frame_type, width, height)
 #if edit, use edit_types_and_parameters
     elif selected_action == 'Edit Existing Door':
         print("edit_existing_door()")
-
     elif selected_action == 'Batch Add Door Families and Types':
-
        # Specify the path to your CSV file
         csv_file_path = "B:\\Revit Projects\\_python tests\\door_configs3.csv"  # Update this path
-
 # Load door configurations from the CSV file
         door_configs = load_door_configs_from_csv(csv_file_path)
-
 # Now you can iterate over door_configs as before
         for config in door_configs:
         # Unpack the configuration tuple into variables
             panel_type, frame_type, width, height = config
                 #format of family name
             family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleSwing_HOK_I"))
-
 # Convert width and height to Revit internal units (feet)
             width = float(width) / 12.0
             height = float(height) / 12.0
         # Call save_as_new_family with the unpacked parameters
             save_as_new_family(family_name, panel_type, frame_type, width, height)
-
             print("Processed " + family_name + " with panel " + panel_type + ", frame " + frame_type + ", width " + str(width) + ", height " + str(height) + ".")
-
     else:
         print("No action selected or action canceled.")
 #Print success message
@@ -138,10 +130,8 @@ def main():
 def prompt_door_action():
     # Define the options to present to the user
     options = ['New Door', 'Edit Existing Door', 'Batch Add Door Families and Types']
-    
     # Show the command switch window with the options
     selected_option = forms.CommandSwitchWindow.show(options, message='Select Door Action')
-    
     # Return the selected option
     return selected_option
 
@@ -153,10 +143,8 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     backupf_path = os.path.join(temp_dir,"Backup")
     final_path =  os.path.join("B:\\Revit Projects\\security doors temp\\try\\", family_name + ".rfa")
 ##This part below chooses whioch primitive door family to start from based on user frame type
-
 #run dictionary function to pull base family name
     doorD = settings(frame_type)
-
     if doorD:       
         filCol = DB.FilteredElementCollector(doc)\
                     .OfCategory(BuiltInCategory.OST_Doors).WhereElementIsElementType()
@@ -168,10 +156,8 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
                 door = elFam
                 break
     else: exit            
-
     print("making a new family...")
     print (str(family_name))
-
 # Edit Family to bring up the family editor
     family_temp = (doc.EditFamily(door))#EditFamily must be called OUTSIDE of a transaction
 #make new type and assign values
@@ -185,9 +171,7 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
             trans.Start()
             famMan = family_temp.FamilyManager
             famFamily = family_temp.OwnerFamily
-            #print ("51" , (famFamily))
             deleteType = famMan.CurrentType
-            #print(str(deleteType),  " delete bB")
             typeMake = famMan.NewType(typeName)
             print("making new type...")       
 #these are the shared parameter GUIDs for the parameters we're looking for
@@ -203,7 +187,6 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
                 #print("type:{}".format(FamThis.Name))
                 if FamThis.Name == panel_type:
                     BamId = FamThis
-
                 elif FamThis.Name == frame_type:
                     FamId = FamThis
                 else: 
@@ -235,7 +218,6 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
                             FamSyms = FamId.GetFamilySymbolIds()
                             for FamSym in FamSyms:
                                 famMan.Set(parr, (FamSym)) 
-
         #set delete type as current type
                 famMan.CurrentType = deleteType
                 typeDel = famMan.DeleteCurrentType()
@@ -245,7 +227,6 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
         except Exception as e: 
             print("Error: {}".format(e))
             trans.RollBack()
-
 #save as the family with new name and path
     family_temp.SaveAs(family_path, DB.SaveAsOptions())
     print("saving new file...")
@@ -253,12 +234,10 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     purge_perf_adv(family_temp)
 # Load the saved family back into the project
     family_temp.SaveAs(final_path, DB.SaveAsOptions())
-
     print("loading new family into project...")
     with Transaction(doc, 'Load Family') as trans:
         trans.Start()
         family_loaded= doc.LoadFamily(family_path)
-       # print (str(family_loaded))
         if not family_loaded:
             print("Failed to load family.")
             return
@@ -270,7 +249,6 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     os.rmdir(temp_dir)
 
 def edit_types_and_params(family_name, panel_type, frame_type, width, height):
-
 #select family to make symbols/edits for
 
 # open a transaction to make changes to things in Revit
@@ -284,8 +262,6 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
             if elem.Name == family_name:
                 # Get all family symbols (types) within the loaded family
                 family_symbols = elem.GetFamilySymbolIds()
-
-
                 for symbol_id in family_symbols:
                     symbol = doc.GetElement(symbol_id)
                     #duplicate the first symbol for simplicity
@@ -293,16 +269,12 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
                     new_symbol_id = symbol.Duplicate("{}x{}".format(int(width*12), int(height*12)))
                     new_sym_ref = DB.Reference(new_symbol_id)
                     new_symbol = doc.GetElement(new_sym_ref)
-
 ##use GUID for the shared parameters instead of searching by name
                     # Set the new symbol's parameters as needed
                     new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
                     new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
-                    
-
                     # Rename the family symbol to reflect the new dimensions in inches
                     new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
-
                     break  # Exit after processing the first symbol
                 break  # Exit after finding the family
         trans.Commit()
@@ -333,7 +305,6 @@ def purge_perf_adv(family_doc):
         try:
             family_doc.Delete(purgableElementIds)
             #print("purge attempt 1")
-
         except:
             for e in purgableElementIds:
                 try:
