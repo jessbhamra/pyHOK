@@ -10,6 +10,7 @@ import tempfile
 import os
 import clr
 import System
+import sys
 from System.Collections.Generic import List
 import csv
 
@@ -61,6 +62,7 @@ def check_fam(family_name, doc):
     return False  # Family does not exist
 
 def main():
+    #defines the inputs via forms and runs the funtion(s) based on input
     selected_action = prompt_door_action()
     if selected_action == 'New Door':
     # Prompt user to enter types in form
@@ -252,7 +254,7 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
 #select family to make symbols/edits for
 
 # open a transaction to make changes to things in Revit
-    with Transaction(doc, 'Create New Family Type') as trans:
+    with Transaction(doc, 'Edit Types and Parameters') as trans:
         trans.Start()
 # Use a FilteredElementCollector to search for elements of the given type
         collector = DB.FilteredElementCollector(doc)\

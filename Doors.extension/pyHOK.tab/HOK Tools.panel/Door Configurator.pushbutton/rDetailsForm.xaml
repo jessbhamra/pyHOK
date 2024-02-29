@@ -2,7 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="HOK Door Configurator" Height="450" Width="350" 
         WindowStartupLocation="CenterScreen"
-        Name="HOK" Icon="C:\Users\Jess.Bhamra\OneDrive - HOK\Documents\GitHub\DoorConfig\Doors.extension\pyHOK.tab\HOK Tools.panel\Door Configurator.pushbutton\HOK.ico">
+        Name="HOK" Icon="C:\Users\Jess.Bhamra\OneDrive - HOK\Documents\GitHub\DoorConfig\Doors.extension\pyHOK.tab\HOK Tools.panel\Door Configurator.pushbutton\HOK.ico"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent">
     <Window.Resources>
         <Style x:Key="InputTextBoxStyle" TargetType="TextBox">
             <Setter Property="Margin" Value="5"/>
@@ -15,7 +16,7 @@
             <Setter Property="Margin" Value="5"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
-        <Style x:Key="SubmitButtonStyle" TargetType="Button">
+        <Style x:Key="RoundedButtonStyle" TargetType="Button">
             <Setter Property="Margin" Value="5"/>
             <Setter Property="Padding" Value="10,10"/>
             <Setter Property="Background" Value="#FF007ACC"/>
@@ -25,27 +26,43 @@
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Height" Value="40"/>
             <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="5"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="3"/> <!-- Red stripe row -->
-            <RowDefinition Height="*"/> <!-- Content row -->
-            <RowDefinition Height="30"/> <!-- Footer row -->
-        </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="Red" VerticalAlignment="Stretch"/> 
-        <StackPanel Grid.Row="1" Margin="10">
-            <Label Style="{StaticResource InputLabelStyle}">Panel Type:</Label>
-            <TextBox x:Name="txtPanelType" Style="{StaticResource InputTextBoxStyle}"/>
-            <Label Style="{StaticResource InputLabelStyle}">Frame Type:</Label>
-            <TextBox x:Name="txtFrameType" Style="{StaticResource InputTextBoxStyle}"/>
-            <Label Style="{StaticResource InputLabelStyle}">Width (in inches):</Label>
-            <TextBox x:Name="txtWidth" Style="{StaticResource InputTextBoxStyle}"/>
-            <Label Style="{StaticResource InputLabelStyle}">Height (in inches):</Label>
-            <TextBox x:Name="txtHeight" Style="{StaticResource InputTextBoxStyle}"/>
-            <Button x:Name="btnSubmit" Content="Submit" Style="{StaticResource SubmitButtonStyle}"/>
-        </StackPanel>
-        <StackPanel Grid.Row="2" Background="#F0F0F0" VerticalAlignment="Bottom">
-        </StackPanel>
-    </Grid>
+    <Border CornerRadius="10" Background="#FFF">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="3"/> <!-- Red stripe row -->
+                <RowDefinition Height="*"/> <!-- Content row -->
+                <RowDefinition Height="30"/> <!-- Footer row -->
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Background="Red" VerticalAlignment="Stretch"/> 
+            <StackPanel Grid.Row="1" Margin="10">
+                <Label Style="{StaticResource InputLabelStyle}">Panel Type:</Label>
+                <TextBox x:Name="txtPanelType" Style="{StaticResource InputTextBoxStyle}"/>
+                <Label Style="{StaticResource InputLabelStyle}">Frame Type:</Label>
+                <TextBox x:Name="txtFrameType" Style="{StaticResource InputTextBoxStyle}"/>
+                <Label Style="{StaticResource InputLabelStyle}">Width (in inches):</Label>
+                <TextBox x:Name="txtWidth" Style="{StaticResource InputTextBoxStyle}"/>
+                <Label Style="{StaticResource InputLabelStyle}">Height (in inches):</Label>
+                <TextBox x:Name="txtHeight" Style="{StaticResource InputTextBoxStyle}"/>
+                <Button x:Name="btnSubmit" Content="OK" Style="{StaticResource RoundedButtonStyle}"/>
+            </StackPanel>
+            <StackPanel Grid.Row="2" Background="#F0F0F0" VerticalAlignment="Bottom">
+            </StackPanel>
+        </Grid>
+    </Border>
 </Window>
