@@ -19,6 +19,7 @@ doc = __revit__.ActiveUIDocument.Document
 ui = __revit__.ActiveUIDocument
 logger = coreutils.logger.get_logger(__name__)
 
+#function to read batch door types from external csv file
 def load_door_configs_from_csv(csv_file_path):
     door_configs = []
     with open(csv_file_path, mode='r') as file:
@@ -28,7 +29,7 @@ def load_door_configs_from_csv(csv_file_path):
                 # Convert width and height to integers before appending
                 door_configs.append((row[0], row[1], int(row[2]), int(row[3])))
     return door_configs
-#function for making families and types from excel. settings/ whatever file
+#function for mapping frame types to starting primitive family
 def settings(frame_name):
     # Define a dictionary where the keys are frame types and the values are source family primitives
     frame_to_primitive_mapping = {
