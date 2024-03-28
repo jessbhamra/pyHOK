@@ -13,6 +13,8 @@ import System
 import sys
 from System.Collections.Generic import List
 import csv
+# Import settings from config.py
+import config
 
 #__context__ = 'Doors'
 doc = __revit__.ActiveUIDocument.Document
@@ -32,20 +34,9 @@ def load_door_configs_from_csv(csv_file_path):
 #function for mapping frame types to starting primitive family
 def settings(frame_name):
     # Define a dictionary where the keys are frame types and the values are source family primitives
-    frame_to_primitive_mapping = {
-        "S01": "DoorConfigPrimative02",
-        "S02": "DoorConfigPrimative02",
-        "S03": "DoorConfigPrimative02",
-        "S18": "DoorConfigPrimativeSidelite01",
-        "S19": "DoorConfigPrimativeSidelite01",
-        "S20": "DoorConfigPrimativeSidelite01",
-        "S21": "DoorConfigPrimativeSidelite01",
-        "S22": "DoorConfigPrimativeSidelite01",
-        "S23": "DoorConfigPrimativeSidelite01",
-    }
-    file_path = "\\\\group\\hok\\FWR\\RESOURCES\\BIM-STAGING\\RVT-DRAFT\\Doors v2\\Security"
+
     # Attempt to get the source family primitive for the given frame name
-    doorD = frame_to_primitive_mapping.get(frame_name)
+    doorD = config.FRAME_TO_PRIMITIVE_MAPPING.get(frame_name)
 
     if doorD:
         print("The source family primitive for " + frame_name + " is " + doorD + ".")
@@ -64,6 +55,9 @@ def check_fam(family_name, doc):
 
 def main():
     #defines the inputs via forms and runs the funtion(s) based on input
+    # Path to the XAML file
+    xaml_file_path = config.XAML_FILE_PATH
+    csv_file_path = config.CSV_FILE_PATH
     selected_action = prompt_door_action()
     if selected_action == 'New Door':
     # Prompt user to enter types in form
@@ -72,7 +66,7 @@ def main():
                 WPFWindow.__init__(self, xaml_file_path)
                 self.btnSubmit.Click += self.on_submit
 ####replace this file path
-                self.set_icon("C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\HOK.ico")
+                self.set_icon(config.ICON_PATH)
 
             def on_submit(self, sender, e):
                 self.panel_type = self.txtPanelType.Text
@@ -81,8 +75,7 @@ def main():
                 self.height = self.txtHeight.Text
                 self.Close()
 ### THIS NEEDS TO BE UPDATED ONCE WE HAVE A LOCATION FOR IT TO GO FOR DEPLOYMENT
-# Path to the XAML file
-        xaml_file_path = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
+
 # Create and show the form
         form = UserDetailsForm(xaml_file_path)
         form.show_dialog()
@@ -93,7 +86,7 @@ def main():
         height = form.height.upper()
         print(panel_type, frame_type, width, height)
         #format of family name
-        family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleSwing_HOK_I"))
+        family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +(config.FAMILY_NAME_SUFFIX))
 # Convert width and height to Revit internal units (feet)
         width = float(width) / 12.0
         height = float(height) / 12.0
@@ -108,17 +101,17 @@ def main():
 #if edit, use edit_types_and_parameters
     elif selected_action == 'Edit Existing Door':
         print("edit_existing_door()")
+#If batch, load configs from csv file as per path below
     elif selected_action == 'Batch Add Door Families and Types':
        # Specify the path to your CSV file
-        csv_file_path = "B:\\Revit Projects\\_python tests\\door_configs3.csv"  # Update this path
 # Load door configurations from the CSV file
         door_configs = load_door_configs_from_csv(csv_file_path)
 # Now you can iterate over door_configs as before
-        for config in door_configs:
+        for confi in door_configs:
         # Unpack the configuration tuple into variables
-            panel_type, frame_type, width, height = config
+            panel_type, frame_type, width, height = confi
                 #format of family name
-            family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +("_SingleSwing_HOK_I"))
+            family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +(config.FAMILY_NAME_SUFFIX))
 # Convert width and height to Revit internal units (feet)
             width = float(width) / 12.0
             height = float(height) / 12.0
@@ -144,7 +137,7 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     temp_dir = tempfile.mkdtemp()
     family_path = os.path.join(temp_dir, family_name + ".rfa")
     backupf_path = os.path.join(temp_dir,"Backup")
-    final_path =  os.path.join("B:\\Revit Projects\\security doors temp\\try\\", family_name + ".rfa")
+    final_path = os.path.join(config.FINAL_FAMILY_PATH, family_name + ".rfa")
 ##This part below chooses whioch primitive door family to start from based on user frame type
 #run dictionary function to pull base family name
     doorD = settings(frame_type)
@@ -178,10 +171,10 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
             typeMake = famMan.NewType(typeName)
             print("making new type...")       
 #these are the shared parameter GUIDs for the parameters we're looking for
-            pwGU = "318d67dd-1f5f-43fb-a3d0-32ac31f1babb"#PANEL WIDTH PANEL 1
-            phGU = "3e7f226e-bc78-407c-982a-d45a405cd2a9"#PANEL HEIGHT
-            pnGU = "8e89f65d-3ed9-45c8-9808-8c315dedadce" #PANEL 1
-            pfGU = "b6930f0e-c0f5-432b-80ee-6c649f876cae" #FRAME
+            pwGU = config.PANEL_WIDTH_GUID #PANEL WIDTH PANEL 1
+            phGU = config.PANEL_HEIGHT_GUID#PANEL HEIGHT
+            pnGU = config.PANEL_TYPE_GUID #PANEL 1
+            pfGU = config.FRAME_TYPE_GUID #FRAME
  #filtered element collector to grab nested door families
             print("updating parameters...")
             nestFams = DB.FilteredElementCollector(family_temp)\
@@ -272,10 +265,10 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
                     new_symbol_id = symbol.Duplicate("{}x{}".format(int(width*12), int(height*12)))
                     new_sym_ref = DB.Reference(new_symbol_id)
                     new_symbol = doc.GetElement(new_sym_ref)
-##use GUID for the shared parameters instead of searching by name
+
                     # Set the new symbol's parameters as needed
-                    new_symbol.LookupParameter('PANEL WIDTH PANEL 1').Set(width)
-                    new_symbol.LookupParameter('PANEL HEIGHT').Set(height)
+                    new_symbol.LookupParameter(config.PARAMETER_NAMES["panel_width"]).Set(width)
+                    new_symbol.LookupParameter(config.PARAMETER_NAMES["panel_height"]).Set(height)
                     # Rename the family symbol to reflect the new dimensions in inches
                     new_symbol.Name = "{}x{}".format(int(width*12), int(height*12))
                     break  # Exit after processing the first symbol
