@@ -21,41 +21,8 @@ doc = __revit__.ActiveUIDocument.Document
 ui = __revit__.ActiveUIDocument
 logger = coreutils.logger.get_logger(__name__)
 
-#function to read batch door types from external csv file
-def load_door_configs_from_csv(csv_file_path):
-    door_configs = []
-    with open(csv_file_path, mode='r') as file:
-        reader = csv.reader(file)
-        for row in reader:
-            if row:  # Ensure the row is not empty
-                # Convert width and height to integers before appending
-                door_configs.append((row[0], row[1], int(row[2]), int(row[3])))
-    return door_configs
-#function for mapping frame types to starting primitive family
-def settings(frame_name):
-    # Define a dictionary where the keys are frame types and the values are source family primitives
-
-    # Attempt to get the source family primitive for the given frame name
-    doorD = config.FRAME_TO_PRIMITIVE_MAPPING.get(frame_name)
-
-    if doorD:
-        print("The source family primitive for " + frame_name + " is " + doorD + ".")
-        return doorD  # Optionally return the door variable if needed elsewhere
-    else:
-        print("No action selected or action canceled.")
-        return None  # Return None or an appropriate value if the frame_name is not found
-# Main function for user input etc
-def check_fam(family_name, doc):
-    collector = FilteredElementCollector(doc).OfClass(DB.Family)
-    
-    for family in collector:
-        if family.Name == family_name:
-            return True  # Family exists
-    return False  # Family does not exist
-
 def main():
     #defines the inputs via forms and runs the funtion(s) based on input
-    # Path to the XAML file
     xaml_file_path = config.XAML_FILE_PATH
     csv_file_path = config.CSV_FILE_PATH
     selected_action = prompt_door_action()
@@ -65,17 +32,13 @@ def main():
             def __init__(self, xaml_file_path):
                 WPFWindow.__init__(self, xaml_file_path)
                 self.btnSubmit.Click += self.on_submit
-####replace this file path
                 self.set_icon(config.ICON_PATH)
-
             def on_submit(self, sender, e):
                 self.panel_type = self.txtPanelType.Text
                 self.frame_type = self.txtFrameType.Text
                 self.width = self.txtWidth.Text
                 self.height = self.txtHeight.Text
                 self.Close()
-### THIS NEEDS TO BE UPDATED ONCE WE HAVE A LOCATION FOR IT TO GO FOR DEPLOYMENT
-
 # Create and show the form
         form = UserDetailsForm(xaml_file_path)
         form.show_dialog()
@@ -85,12 +48,12 @@ def main():
         width = form.width.upper()
         height = form.height.upper()
         print(panel_type, frame_type, width, height)
-        #format of family name
+#format of family name
         family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +(config.FAMILY_NAME_SUFFIX))
 # Convert width and height to Revit internal units (feet)
         width = float(width) / 12.0
         height = float(height) / 12.0
-#check to see if the info enters matches an existing door in the project. 
+# check to see if the info enters matches an existing door in the project. 
 # #If yes, then check type, and if a new type, go to the edit function
         if check_fam(family_name, doc):
            # edit_types_and_params(family_name, panel_type, frame_type, width, height)  # Call function to edit an existing door
@@ -103,7 +66,6 @@ def main():
         print("edit_existing_door()")
 #If batch, load configs from csv file as per path below
     elif selected_action == 'Batch Add Door Families and Types':
-       # Specify the path to your CSV file
 # Load door configurations from the CSV file
         door_configs = load_door_configs_from_csv(csv_file_path)
 # Now you can iterate over door_configs as before
@@ -115,13 +77,43 @@ def main():
 # Convert width and height to Revit internal units (feet)
             width = float(width) / 12.0
             height = float(height) / 12.0
-        # Call save_as_new_family with the unpacked parameters
+# Call save_as_new_family with the unpacked parameters
             save_as_new_family(family_name, panel_type, frame_type, width, height)
             print("Processed " + family_name + " with panel " + panel_type + ", frame " + frame_type + ", width " + str(width) + ", height " + str(height) + ".")
     else:
         print("No action selected or action canceled.")
 #Print success message
     print("HOK Door Configurator finished {} at {} on {}".format(family_name, coreutils.current_time(), coreutils.current_date()))
+
+#function to read batch door types from external csv file
+def load_door_configs_from_csv(csv_file_path):
+    door_configs = []
+    with open(csv_file_path, mode='r') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            if row:  # Ensure the row is not empty
+                # Convert width and height to integers before appending
+                door_configs.append((row[0], row[1], int(row[2]), int(row[3])))
+    return door_configs
+
+#function for mapping frame types to starting primitive family
+def settings(frame_name):
+    # Point to dictionary in config file where the keys are frame types and the values are source family primitives
+    # Attempt to get the source family primitive for the given frame name
+    doorD = config.FRAME_TO_PRIMITIVE_MAPPING.get(frame_name)
+    if doorD:
+        print("The source family primitive for " + frame_name + " is " + doorD + ".")
+        return doorD  # Optionally return the door variable if needed elsewhere
+    else:
+        print("No action selected or action canceled.")
+        return None  # Return None or an appropriate value if the frame_name is not found
+
+def check_fam(family_name, doc):
+    collector = FilteredElementCollector(doc).OfClass(DB.Family)
+    for family in collector:
+        if family.Name == family_name:
+            return True  # Family exists
+    return False  # Family does not exist
 
 def prompt_door_action():
     # Define the options to present to the user
@@ -245,8 +237,7 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     os.rmdir(temp_dir)
 
 def edit_types_and_params(family_name, panel_type, frame_type, width, height):
-#select family to make symbols/edits for
-
+#THIS DOESN'T WORK YET, DON'T CALL IT
 # open a transaction to make changes to things in Revit
     with Transaction(doc, 'Edit Types and Parameters') as trans:
         trans.Start()
@@ -276,7 +267,7 @@ def edit_types_and_params(family_name, panel_type, frame_type, width, height):
         trans.Commit()
 
 def purge_perf_adv(family_doc):
-    purgeGuid = 'e8c63650-70b7-435a-9010-ec97660c1bda'
+    purgeGuid = config.PURGE_GUID
     purgableElementIds = []
     performanceAdviser = DB.PerformanceAdviser.GetPerformanceAdviser()
     guid = System.Guid(purgeGuid)
@@ -293,7 +284,6 @@ def purge_perf_adv(family_doc):
         if failureMessages.Count > 0:
         # Retreives the elements
             purgableElementIds = failureMessages[0].GetFailingElements()
-    #print(purgableElementIds)
 # Deletes the elements
     print("it's purgin' time...")
     with Transaction(family_doc, 'Its purgin time') as s:
@@ -310,6 +300,5 @@ def purge_perf_adv(family_doc):
                         #print("no purge")
                     pass
         s.Commit()        
-
 # Call the main function
 main()
