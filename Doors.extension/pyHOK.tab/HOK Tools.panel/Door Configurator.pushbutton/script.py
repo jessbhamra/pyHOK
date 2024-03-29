@@ -49,7 +49,8 @@ def main():
         height = form.height.upper()
         print(panel_type, frame_type, width, height)
 #format of family name
-        family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +(config.FAMILY_NAME_SUFFIX))
+        doorD, suffix = settings(frame_type)
+        family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type + suffix)
 # Convert width and height to Revit internal units (feet)
         width = float(width) / 12.0
         height = float(height) / 12.0
@@ -73,7 +74,8 @@ def main():
         # Unpack the configuration tuple into variables
             panel_type, frame_type, width, height = confi
                 #format of family name
-            family_name = str.format(("08-Door_") + panel_type + ("_") + frame_type +(config.FAMILY_NAME_SUFFIX))
+            doorD, suffix = settings(frame_type)
+            family_name = "08-Door_" + panel_type + "_" + frame_type + suffix
 # Convert width and height to Revit internal units (feet)
             width = float(width) / 12.0
             height = float(height) / 12.0
@@ -100,14 +102,17 @@ def load_door_configs_from_csv(csv_file_path):
 def settings(frame_name):
     # Point to dictionary in config file where the keys are frame types and the values are source family primitives
     # Attempt to get the source family primitive for the given frame name
-    doorD = config.FRAME_TO_PRIMITIVE_MAPPING.get(frame_name)
+    # Unpack the tuple into doorD and suffix
+    mapping = config.FRAME_TO_PRIMITIVE_MAPPING.get(frame_name, (None, None))
+    doorD, suffix = mapping
     if doorD:
         print("The source family primitive for " + frame_name + " is " + doorD + ".")
-        return doorD  # Optionally return the door variable if needed elsewhere
+        # Now return both the doorD and the suffix
+        return doorD, suffix
     else:
         print("No action selected or action canceled.")
-        return None  # Return None or an appropriate value if the frame_name is not found
-
+        return None, None
+    
 def check_fam(family_name, doc):
     collector = FilteredElementCollector(doc).OfClass(DB.Family)
     for family in collector:
@@ -132,7 +137,7 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
     final_path = os.path.join(config.FINAL_FAMILY_PATH, family_name + ".rfa")
 ##This part below chooses whioch primitive door family to start from based on user frame type
 #run dictionary function to pull base family name
-    doorD = settings(frame_type)
+    doorD, suffix = settings(frame_type)
     if doorD:       
         filCol = DB.FilteredElementCollector(doc)\
                     .OfCategory(BuiltInCategory.OST_Doors).WhereElementIsElementType()

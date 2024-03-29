@@ -17,33 +17,32 @@ FRAME_TYPE_GUID = "b6930f0e-c0f5-432b-80ee-6c649f876cae"
 PURGE_GUID = 'e8c63650-70b7-435a-9010-ec97660c1bda'
 
 # Frame to primitive mapping
+# Frame to primitive mapping with family name suffix
 FRAME_TO_PRIMITIVE_MAPPING = {
-        "D01": "DoorConfigPrimative02",
-        "S02": "DoorConfigPrimative02",
-        "S03": "DoorConfigPrimative02",
-        "D03A": "DoorConfigPrimativeSidelite01",
-        "D03B": "DoorConfigPrimativeSidelite01",
-        "D03C": "DoorConfigPrimativeSidelite01",
-        "D04A": "DoorConfigPrimativeSidelite01",
-        "D04B": "DoorConfigPrimativeSidelite01",
-        "D04C": "DoorConfigPrimativeSidelite01",
-        "D05A": "DoorConfigPrimativeSidelite01",
-        "D05B": "DoorConfigPrimativeSidelite01",
-        "D05C": "DoorConfigPrimativeSidelite01",
-        "D06A": "DoorConfigPrimativeSidelite01",
-        "D06B": "DoorConfigPrimativeSidelite01",
-        "D06C": "DoorConfigPrimativeSidelite01",
-        "D07A": "DoorConfigPrimativeSidelite01",
-        "D07B": "DoorConfigPrimativeSidelite01",
-        "D07C": "DoorConfigPrimativeSidelite01",
-        "S21": "DoorConfigPrimativeSidelite01",
-        "S22": "DoorConfigPrimativeSidelite01",
-        "S23": "DoorConfigPrimativeSidelite01",
-        "D02": "DoorConfigPrimativeDouble01"
+    "S01": ("DoorConfigPrimative02", "_SingleSwing_HOK_I"),
+    "S02": ("DoorConfigPrimative02", "_SingleSwing_HOK_I"),
+    "S03": ("DoorConfigPrimative02", "_SingleSwing_HOK_I"),
+    "D03A": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D03B": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D03C": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D04A": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D04B": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D04C": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D05A": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D05B": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D05C": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D06A": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D06B": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D06C": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D07A": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D07B": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D07C": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "S21": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "S22": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "S23": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
+    "D02": ("DoorConfigPrimativeDouble01", "_DoubleSwing_HOK_I")
 }
 
-# Family name suffix
-FAMILY_NAME_SUFFIX = "_SingleSwing_HOK_I"
 
 # Revit parameter names
 PARAMETER_NAMES = {
