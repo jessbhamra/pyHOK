@@ -21,6 +21,8 @@ doc = __revit__.ActiveUIDocument.Document
 ui = __revit__.ActiveUIDocument
 logger = coreutils.logger.get_logger(__name__)
 
+#if frame is ds1, use shared parameter guid #### for the slider width slider 1 parameter, or do name match
+
 def main():
     #defines the inputs via forms and runs the funtion(s) based on input
     xaml_file_path = config.XAML_FILE_PATH
