@@ -172,7 +172,7 @@ def save_as_new_family(family_name, panel_type, frame_type, width, height):
             phGU = config.PANEL_HEIGHT_GUID#PANEL HEIGHT
             pnGU = config.PANEL_TYPE_GUID #PANEL 1
             pfGU = config.FRAME_TYPE_GUID #FRAME
- #filtered element collector to grab nested door families
+ #filtered element collector to grab nested door frame and panels
             print("updating parameters...")
             nestFams = DB.FilteredElementCollector(family_temp)\
                 .OfClass(DB.Family).ToElements()
