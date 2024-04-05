@@ -39,7 +39,7 @@ FRAME_TO_PRIMITIVE_MAPPING = {
     "D07C": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
     "S21": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
     "S22": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
-    "DS1": ("DoorConfigPrimativeSingleSliding01", "_SingleSliding_HOK_I"),
+    "DS1": ("DoorConfigPrimativeSingleSliding02", "_SingleSliding_HOK_I"),
     "S23": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
     "D02": ("DoorConfigPrimativeDouble01", "_DoubleSwing_HOK_I")
 }
