@@ -4,8 +4,8 @@
 # Paths
 ICON_PATH = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\HOK.ico"
 XAML_FILE_PATH = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
-CSV_FILE_PATH = "B:\\Revit Projects\\_python tests\\door_configs4.csv"
-FINAL_FAMILY_PATH = "B:\\Revit Projects\\security doors temp\\try5\\"
+CSV_FILE_PATH = "B:\\Revit Projects\\_python tests\\door_configs5.csv"
+FINAL_FAMILY_PATH = "B:\\Revit Projects\\security doors temp\\try6\\"
 
 # GUIDs for parameters
 PANEL_WIDTH_GUID = "318d67dd-1f5f-43fb-a3d0-32ac31f1babb"
@@ -22,6 +22,9 @@ FRAME_TO_PRIMITIVE_MAPPING = {
     "S01": ("DoorConfigPrimative02", "_SingleSwing_HOK_I"),
     "S02": ("DoorConfigPrimative02", "_SingleSwing_HOK_I"),
     "S03": ("DoorConfigPrimative02", "_SingleSwing_HOK_I"),
+    "D01A": ("DoorConfigPrimative02", "_SingleSwing_HOK_I"),
+    "D01B": ("DoorConfigPrimative02", "_SingleSwing_HOK_I"),
+    "D01C": ("DoorConfigPrimative02", "_SingleSwing_HOK_I"),
     "D03A": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
     "D03B": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
     "D03C": ("DoorConfigPrimativeSidelite01", "_SingleSwing_HOK_I"),
