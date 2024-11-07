@@ -2,8 +2,8 @@
 #Configuration file for door builder to make it easier to swap this stuff up
 
 # Paths
-ICON_PATH = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\HOK.ico"
-XAML_FILE_PATH = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\DoorConfig\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
+ICON_PATH = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\pyHOK\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\HOK.ico"
+XAML_FILE_PATH = "C:\\Users\\Jess.Bhamra\\OneDrive - HOK\\Documents\\GitHub\\pyHOK\\Doors.extension\\pyHOK.tab\\HOK Tools.panel\\Door Configurator.pushbutton\\rDetailsForm.xaml"
 CSV_FILE_PATH = "B:\\Revit Projects\\_python tests\\door_configs6.csv"
 FINAL_FAMILY_PATH = "B:\\Revit Projects\\security doors temp\\TRY8\\"
 
