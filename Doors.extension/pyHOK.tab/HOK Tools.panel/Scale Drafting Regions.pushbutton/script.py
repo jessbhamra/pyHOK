@@ -27,7 +27,9 @@ from Autodesk.Revit.DB import (
     Options,
     GeometryInstance,
     GeometryElement,
-    GeometryObject
+    GeometryObject,
+    CurveElement,
+    CategoryType
 )
 from pyrevit import revit, forms, script
 
@@ -69,7 +71,10 @@ detail_lines = FilteredElementCollector(doc, active_view.Id)\
     .ToElements()
 
 # Filter out model curves (keep only detail lines)
-detail_lines = [dl for dl in detail_lines if dl.ViewSpecific and dl.LineStyle.GraphicsStyleCategory.CategoryType == Autodesk.Revit.DB.CategoryType.Annotation]
+detail_lines = [
+    dl for dl in detail_lines
+    if dl.ViewSpecific and dl.LineStyle.GraphicsStyleCategory.CategoryType == CategoryType.Annotation
+]
 
 if not filled_regions and not detail_lines:
     forms.alert('No filled regions or detail lines found in the active drafting view.', exitscript=True)
@@ -82,8 +87,8 @@ try:
     # Define the base point for scaling (origin)
     base_point = XYZ(0, 0, 0)
 
-    # Create scaling transform
-    scaling_transform = Transform.ScaleBasis(base_point, scale_factor)
+    # Create scaling transform using ElementTransformUtils.GetScalingTransform
+    scaling_transform = ElementTransformUtils.GetScalingTransform(base_point, scale_factor)
 
     # Scaling Filled Regions
     for fr in filled_regions:
@@ -117,11 +122,9 @@ try:
 
         # Create new transformed curves
         for curve_loop in boundaries:
-            transformed_curve_loop = CurveLoop()
             for curve in curve_loop:
                 # Clone and transform the curve
                 transformed_curve = curve.CreateTransformed(scaling_transform)
-                transformed_curve_loop.Append(transformed_curve)
 
                 # Create new model curve in the sketch
                 doc.Create.NewModelCurve(transformed_curve, sketch.SketchPlane)
