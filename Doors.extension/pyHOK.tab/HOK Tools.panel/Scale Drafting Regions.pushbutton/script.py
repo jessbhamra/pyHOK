@@ -1,7 +1,7 @@
+# -*- coding: utf-8 -*-
 
-"""Scale up multiple filled regions"""
-__title__ = 'Scale Filled Regions'
-__author__ = 'HOK'
+__title__ = 'Scale Up Filled Regions and Lines in Drafting View'
+__author__ = 'Your Name'
 
 from Autodesk.Revit.DB import (
     FilteredElementCollector,
@@ -21,7 +21,13 @@ from Autodesk.Revit.DB import (
     Arc,
     Ellipse,
     NurbSpline,
-    ViewType
+    ViewType,
+    DetailLine,
+    GraphicsStyleType,
+    Options,
+    GeometryInstance,
+    GeometryElement,
+    GeometryObject
 )
 from pyrevit import revit, forms, script
 
@@ -56,81 +62,94 @@ filled_regions = FilteredElementCollector(doc, active_view.Id)\
     .OfClass(FilledRegion)\
     .ToElements()
 
-if not filled_regions:
-    forms.alert('No filled regions found in the active drafting view.', exitscript=True)
+# Collect all detail lines in the active drafting view
+detail_lines = FilteredElementCollector(doc, active_view.Id)\
+    .OfClass(CurveElement)\
+    .WhereElementIsNotElementType()\
+    .ToElements()
+
+# Filter out model curves (keep only detail lines)
+detail_lines = [dl for dl in detail_lines if dl.ViewSpecific and dl.LineStyle.GraphicsStyleCategory.CategoryType == Autodesk.Revit.DB.CategoryType.Annotation]
+
+if not filled_regions and not detail_lines:
+    forms.alert('No filled regions or detail lines found in the active drafting view.', exitscript=True)
 
 # Start a transaction to modify the Revit document
-transaction = Transaction(doc, 'Scale Up Filled Regions')
+transaction = Transaction(doc, 'Scale Up Filled Regions and Lines')
 transaction.Start()
 
 try:
+    # Define the base point for scaling (origin)
+    base_point = XYZ(0, 0, 0)
+
+    # Create scaling transform
+    scaling_transform = Transform.ScaleBasis(base_point, scale_factor)
+
+    # Scaling Filled Regions
     for fr in filled_regions:
         # Get the sketch associated with the filled region
-        sketch_id = fr.GetSketchId()
-        sketch = doc.GetElement(sketch_id)
+        # Retrieve the sketch by getting the dependent elements
+        dependent_ids = fr.GetDependentElements(None)
+        sketch = None
+        for dep_id in dependent_ids:
+            dep_elem = doc.GetElement(dep_id)
+            if isinstance(dep_elem, Sketch):
+                sketch = dep_elem
+                break
 
-        # Get the boundaries of the filled region
-        boundaries = fr.GetBoundaries()
-
-        # Calculate the centroid of the filled region
-        points = []
-        for curve_loop in boundaries:
-            for curve in curve_loop:
-                start_point = curve.GetEndPoint(0)
-                end_point = curve.GetEndPoint(1)
-                points.append(start_point)
-                points.append(end_point)
-
-        centroid = XYZ(
-            sum(pt.X for pt in points) / len(points),
-            sum(pt.Y for pt in points) / len(points),
-            sum(pt.Z for pt in points) / len(points)
-        )
-
-        # Create a scaling transform around the centroid
-        scaling_transform = Transform.ScaleBasis(centroid, scale_factor)
-
-        # Create a list to hold the transformed curves
-        transformed_curves = []
-
-        for curve_loop in boundaries:
-            for curve in curve_loop:
-                # Clone the curve to avoid modifying the original
-                geom_curve = curve.Clone()
-
-                # Apply the scaling transform to the curve
-                transformed_curve = geom_curve.CreateTransformed(scaling_transform)
-
-                # Add the transformed curve to the list
-                transformed_curves.append(transformed_curve)
+        if not sketch:
+            continue  # Skip if no sketch is found
 
         # Start sketch edit scope
         sketch_edit_scope = SketchEditScope(doc, 'Edit Filled Region Sketch')
         sketch_edit_scope.Start(sketch.Id)
 
-        # Delete existing model curves in the sketch
-        model_curves = sketch.GetAllModelCurves()
-        for mc in model_curves:
-            doc.Delete(mc.Id)
+        # Get existing model curves in the sketch
+        model_curves = sketch.Profile
 
-        # Create new model curves with the transformed curves
-        sketch_plane = sketch.SketchPlane
+        # Delete existing model curves
+        for curve_array in model_curves:
+            for curve_elem in curve_array:
+                doc.Delete(curve_elem.Id)
 
-        for curve in transformed_curves:
-            # Create new model curve in the sketch
-            if isinstance(curve, Line) or isinstance(curve, Arc) or isinstance(curve, Ellipse) or isinstance(curve, NurbSpline):
-                doc.Create.NewModelCurve(curve, sketch_plane)
-            else:
-                # Handle other curve types if necessary
-                pass
+        # Get the boundaries of the filled region
+        boundaries = fr.GetBoundaries()
+
+        # Create new transformed curves
+        for curve_loop in boundaries:
+            transformed_curve_loop = CurveLoop()
+            for curve in curve_loop:
+                # Clone and transform the curve
+                transformed_curve = curve.CreateTransformed(scaling_transform)
+                transformed_curve_loop.Append(transformed_curve)
+
+                # Create new model curve in the sketch
+                doc.Create.NewModelCurve(transformed_curve, sketch.SketchPlane)
 
         # Finish sketch edit scope
         sketch_edit_scope.Commit(True)
 
+    # Scaling Detail Lines
+    for dl in detail_lines:
+        # Get the geometry curve of the detail line
+        geom_curve = dl.GeometryCurve
+
+        # Clone and transform the curve
+        transformed_curve = geom_curve.CreateTransformed(scaling_transform)
+
+        # Create new detail line with the transformed curve
+        new_dl = doc.Create.NewDetailCurve(active_view, transformed_curve)
+
+        # Copy the line style
+        new_dl.LineStyle = dl.LineStyle
+
+        # Delete the old detail line
+        doc.Delete(dl.Id)
+
     # Commit the transaction
     transaction.Commit()
 
-    forms.alert('Filled regions have been scaled successfully.', exitscript=True)
+    forms.alert('Filled regions and detail lines have been scaled successfully.', exitscript=True)
 
 except Exception as e:
     # Roll back the transaction in case of an error
