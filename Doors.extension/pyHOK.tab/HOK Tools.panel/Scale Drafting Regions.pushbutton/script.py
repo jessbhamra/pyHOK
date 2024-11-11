@@ -33,6 +33,23 @@ from Autodesk.Revit.DB import (
 )
 from pyrevit import revit, forms, script
 
+# Function to create a scaling Transform about a specific point
+def create_scaling_transform(base_point, scale_factor):
+    # Translation to move the base point to the origin
+    translation_to_origin = Transform.CreateTranslation(-base_point)
+
+    # Scaling transform about the origin
+    scaling = Transform.Identity
+    scaling = scaling.ScaleBasis(scale_factor)
+
+    # Translation to move back to the base point
+    translation_back = Transform.CreateTranslation(base_point)
+
+    # Combine the transforms: translate to origin, scale, translate back
+    scaling_transform = translation_back.Multiply(scaling).Multiply(translation_to_origin)
+
+    return scaling_transform
+
 # Get the current Revit document
 doc = revit.doc
 
@@ -79,36 +96,32 @@ detail_lines = [
 if not filled_regions and not detail_lines:
     forms.alert('No filled regions or detail lines found in the active drafting view.', exitscript=True)
 
-# Start a transaction to modify the Revit document
-transaction = Transaction(doc, 'Scale Up Filled Regions and Lines')
-transaction.Start()
+# Define the base point for scaling (origin)
+base_point = XYZ(0, 0, 0)
 
-try:
-    # Define the base point for scaling (origin)
-    base_point = XYZ(0, 0, 0)
+# Create scaling transform using the custom function
+scaling_transform = create_scaling_transform(base_point, scale_factor)
 
-    # Create scaling transform using ElementTransformUtils.GetScalingTransform
-    scaling_transform = ElementTransformUtils.GetScalingTransform(base_point, scale_factor)
+# Scaling Filled Regions
+for fr in filled_regions:
+    # Get the sketch associated with the filled region
+    # Retrieve the sketch by getting the dependent elements
+    dependent_ids = fr.GetDependentElements(None)
+    sketch = None
+    for dep_id in dependent_ids:
+        dep_elem = doc.GetElement(dep_id)
+        if isinstance(dep_elem, Sketch):
+            sketch = dep_elem
+            break
 
-    # Scaling Filled Regions
-    for fr in filled_regions:
-        # Get the sketch associated with the filled region
-        # Retrieve the sketch by getting the dependent elements
-        dependent_ids = fr.GetDependentElements(None)
-        sketch = None
-        for dep_id in dependent_ids:
-            dep_elem = doc.GetElement(dep_id)
-            if isinstance(dep_elem, Sketch):
-                sketch = dep_elem
-                break
+    if not sketch:
+        continue  # Skip if no sketch is found
 
-        if not sketch:
-            continue  # Skip if no sketch is found
+    # Start sketch edit scope without an active transaction
+    sketch_edit_scope = SketchEditScope(doc, 'Edit Filled Region Sketch')
+    sketch_edit_scope.Start(sketch.Id)
 
-        # Start sketch edit scope
-        sketch_edit_scope = SketchEditScope(doc, 'Edit Filled Region Sketch')
-        sketch_edit_scope.Start(sketch.Id)
-
+    try:
         # Get existing model curves in the sketch
         model_curves = sketch.Profile
 
@@ -129,10 +142,16 @@ try:
                 # Create new model curve in the sketch
                 doc.Create.NewModelCurve(transformed_curve, sketch.SketchPlane)
 
-        # Finish sketch edit scope
+        # Commit the sketch edit scope
         sketch_edit_scope.Commit(True)
 
-    # Scaling Detail Lines
+    except Exception as e:
+        # Roll back the sketch edit scope in case of an error
+        sketch_edit_scope.RollBack()
+        raise e  # Re-raise the exception to be caught by the outer exception handler
+
+# Scaling Detail Lines
+with Transaction(doc, 'Scale Detail Lines'):
     for dl in detail_lines:
         # Get the geometry curve of the detail line
         geom_curve = dl.GeometryCurve
@@ -149,12 +168,4 @@ try:
         # Delete the old detail line
         doc.Delete(dl.Id)
 
-    # Commit the transaction
-    transaction.Commit()
-
-    forms.alert('Filled regions and detail lines have been scaled successfully.', exitscript=True)
-
-except Exception as e:
-    # Roll back the transaction in case of an error
-    transaction.RollBack()
-    forms.alert('An error occurred: ' + str(e), exitscript=True)
+forms.alert('Filled regions and detail lines have been scaled successfully.', exitscript=True)
