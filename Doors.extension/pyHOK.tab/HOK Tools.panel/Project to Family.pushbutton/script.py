@@ -1,6 +1,7 @@
 ## pyRevit script to take selected 2d content and convert to detail family. 
 ## possibly also replace selected with new family automatically once created.
 ## also allow detail groups to be converted, and replaced where desired.
+
 from Autodesk.Revit.DB import (
     Transaction,
     FilteredElementCollector,
