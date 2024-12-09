@@ -2,145 +2,225 @@
 ## possibly also replace selected with new family automatically once created.
 ## also allow detail groups to be converted, and replaced where desired.
 
+# -*- coding: utf-8 -*-
+"""
+pyRevit script:
+Convert selected 2D detail elements (lines, filled regions, detail components, detail groups, etc.)
+into a single detail item family. Optionally replace the original selection with the newly created family instance.
+
+Steps:
+1. Prompt the user for a new family name.
+2. Create a new detail family from a specified template.
+3. Copy selected elements (or detail group members) into the family.
+4. Save and load the family into the project.
+5. Optionally replace original elements/group with a family instance placed at the original centroid.
+
+Requires: Revit 2022+, pyRevit environment.
+"""
+
 from Autodesk.Revit.DB import (
-    Transaction,
     FilteredElementCollector,
-    ElementMulticategoryFilter,
     BuiltInCategory,
-    ElementTransformUtils,
-    ViewFamilyType,
     FamilyCreationOptions,
-    SaveAsOptions
-)
-from Autodesk.Revit.UI import (
-    TaskDialog,
-    FileOpenDialog,
-    FileOpenDialogResult,
-    IExternalEventHandler,
-    IExternalApplication,
-    UIDocument
+    ElementTransformUtils,
+    SaveAsOptions,
+    Transform,
+    XYZ,
+    Transaction,
+    Group,
+    Category,
+    BoundingBoxXYZ,
+    Family,
+    FamilySymbol,
 )
 from pyrevit import revit, DB, forms
 import os
 
-# Get the current document and UI
+# -------------------------------
+# User Config
+# -------------------------------
+FAMILY_TEMPLATE_PATH = r"C:\Revit Templates\Metric Detail Item.rft"  # Update as needed
+
+# -------------------------------
+# Setup & Validation
+# -------------------------------
 uidoc = revit.uidoc
 doc = revit.doc
 
-# Ensure we have a selection of detail elements
-selection_ids = [elId for elId in uidoc.Selection.GetElementIds()]
+selection_ids = uidoc.Selection.GetElementIds()
 if not selection_ids:
-    forms.alert("No elements selected. Please select 2D detail elements and run again.", exitscript=True)
+    forms.alert("No elements selected. Please select detail elements or a detail group.", exitscript=True)
 
-# Retrieve the selected elements
+current_view = doc.ActiveView
+if current_view.ViewType not in [DB.ViewType.Detail, DB.ViewType.DraftingView]:
+    forms.alert("Please run this in a Detail or Drafting view.", exitscript=True)
+
+if not os.path.exists(FAMILY_TEMPLATE_PATH):
+    forms.alert("Detail item family template not found. Update FAMILY_TEMPLATE_PATH.", exitscript=True)
+
+
+# -------------------------------
+# Identify Selected Elements
+# -------------------------------
 selected_elements = [doc.GetElement(eid) for eid in selection_ids]
 
-# Filter the selected elements to only those that are 2D Detail elements
-# Valid categories for "2D detail" could include:
-# Detail Lines (OST_Lines), Filled Regions (OST_FilledRegion), Detail Components (OST_DetailComponents),
-# Reference Planes (OST_CLines)
-valid_categories = [
+# Identify if a detail group is selected (we'll assume one detail group or multiple are allowed)
+detail_groups = [el for el in selected_elements if isinstance(el, Group) and el.GroupType.Category.Id.IntegerValue == BuiltInCategory.OST_IOSDetailGroups]
+non_group_elements = [el for el in selected_elements if not isinstance(el, Group)]
+
+# If detail groups are selected, gather their members
+elements_to_process = []
+if detail_groups:
+    # We'll combine all detail group members and treat them as one set of elements
+    # If multiple groups selected, we combine all members. Alternatively, handle one group at a time if desired.
+    for grp in detail_groups:
+        for member_id in grp.GetMemberIds():
+            member_el = doc.GetElement(member_id)
+            elements_to_process.append(member_el)
+    # If groups are selected, ignore the non-group elements for this run (or merge them if needed)
+    # Here we merge them, allowing user to select a group plus some lines. Adjust logic if undesired.
+    elements_to_process.extend(non_group_elements)
+else:
+    # No detail group selected, just use the currently selected 2D elements
+    elements_to_process = non_group_elements
+
+if not elements_to_process:
+    forms.alert("No valid detail elements found. Please select 2D detail elements or a detail group.", exitscript=True)
+
+# Validate categories for 2D elements
+valid_cats = [
     BuiltInCategory.OST_Lines,
     BuiltInCategory.OST_FilledRegion,
     BuiltInCategory.OST_DetailComponents,
-    BuiltInCategory.OST_Insulation, # If needed
+    BuiltInCategory.OST_Insulation,
     BuiltInCategory.OST_CLines,
-    BuiltInCategory.OST_DetailItems
+    BuiltInCategory.OST_DetailItems,
+    # Groups handled separately
 ]
 
-filtered_selection = [el for el in selected_elements if el.Category and el.Category.Id.IntegerValue in [cat.value__ for cat in valid_categories]]
+filtered_elements = []
+for el in elements_to_process:
+    if el.Category and el.Category.Id.IntegerValue in [cat.value__ for cat in valid_cats]:
+        filtered_elements.append(el)
+    # If something doesn't fit, we skip it silently or show a message
+    # forms.alert(f"Element {el.Id} category {el.Category.Name} not supported")
 
-if not filtered_selection:
-    forms.alert("No valid 2D detail elements selected. Please select lines, detail components, or filled regions.", exitscript=True)
+if not filtered_elements:
+    forms.alert("Selected elements are not supported for conversion.", exitscript=True)
 
-# Check if we're in a detail or drafting view
-current_view = doc.ActiveView
-if not (current_view.ViewType == DB.ViewType.Detail or current_view.ViewType == DB.ViewType.DraftingView):
-    forms.alert("Please run this command in a Detail or Drafting view.", exitscript=True)
+# -------------------------------
+# Compute a reference point (centroid) for placement
+# -------------------------------
+# We can compute a simple centroid by averaging the bounding box centers of each element
+def get_element_bbox_center(e):
+    bbox = e.get_BoundingBox(current_view)
+    if bbox:
+        center = (bbox.Min + bbox.Max) * 0.5
+        return center
+    else:
+        return XYZ(0,0,0)
+
+centroids = [get_element_bbox_center(el) for el in filtered_elements if get_element_bbox_center(el)]
+if centroids:
+    avg_x = sum(c.X for c in centroids) / len(centroids)
+    avg_y = sum(c.Y for c in centroids) / len(centroids)
+    avg_z = sum(c.Z for c in centroids) / len(centroids)
+    placement_point = XYZ(avg_x, avg_y, avg_z)
+else:
+    placement_point = XYZ(0,0,0)
 
 
-##################################
-# Family creation steps
-##################################
+# -------------------------------
+# Ask user for family name
+# -------------------------------
+family_name = forms.ask_for_string(prompt="Enter a name for the new detail family:", default="NewDetailFamily")
+if not family_name:
+    forms.alert("No family name provided. Operation cancelled.", exitscript=True)
 
-# Path to your detail item family template
-# Update this to a valid path on your machine or company standard template.
-FAMILY_TEMPLATE_PATH = r"C:\Revit Templates\Metric Detail Item.rft"  # Example, must exist!
+# Ask user for save location
+save_path = forms.save_file(file_ext='rfa', prompt_title='Save new detail family', default_name=family_name)
+if not save_path:
+    forms.alert("No save location selected. Operation cancelled.", exitscript=True)
 
-if not os.path.exists(FAMILY_TEMPLATE_PATH):
-    forms.alert("Detail item family template not found. Update FAMILY_TEMPLATE_PATH in script.")
-    raise ValueError("Family template path invalid")
 
+# -------------------------------
+# Create the Family
+# -------------------------------
 app = doc.Application
-
-# Create a new family document from template
 family_doc = app.NewFamilyDocument(FAMILY_TEMPLATE_PATH)
 
-# Start a transaction in the family doc (not strictly necessary for copy)
-t_fam = Transaction(family_doc, "Prepare Family")
+t_fam = Transaction(family_doc, "Create Detail Family")
 t_fam.Start()
 
-# The copy/paste process: we have to map elements from the project doc to family doc
-# We'll try using ElementTransformUtils.CopyElements
-element_ids_to_copy = [el.Id for el in filtered_selection]
-
-# Copy the elements into the family document
-mapping = ElementTransformUtils.CopyElements(
-    sourceDoc=doc,
-    elementIds=element_ids_to_copy,
-    targetDoc=family_doc,
-    transform=DB.Transform.Identity
-)
+# Copy elements from project to family
+elem_ids = [el.Id for el in filtered_elements]
+ElementTransformUtils.CopyElements(doc, elem_ids, family_doc, Transform.Identity, None)
 
 t_fam.Commit()
 
-
-# Save the family to a temporary location or prompt user for location
-temp_family_path = forms.save_file(file_ext='rfa', prompt_title='Save new detail family', default_name='NewDetailFamily')
-if not temp_family_path:
-    forms.alert("No save location specified. Cancelling.")
-    family_doc.Close(False)
-    raise Exception("Family save cancelled")
-
+# Save family
 save_options = SaveAsOptions()
-family_doc.SaveAs(temp_family_path, save_options)
+family_doc.SaveAs(save_path, save_options)
 family_doc.Close(False)
 
-##################################
-# Load the created family into the project
-##################################
-t_load = Transaction(doc, "Load Detail Component Family")
+
+# -------------------------------
+# Load Family into Project
+# -------------------------------
+t_load = Transaction(doc, "Load Detail Family")
 t_load.Start()
 loaded_family = None
-load_result = doc.LoadFamily(temp_family_path, loaded_family)
+res = doc.LoadFamily(save_path, loaded_family)
 t_load.Commit()
 
-if not load_result:
+if not res:
     forms.alert("Failed to load the newly created family into the project.")
     raise Exception("Family load failed")
 
+# Find the loaded family by name
+loaded_fam = None
+for f in FilteredElementCollector(doc).OfClass(Family):
+    if f.Name == family_name:
+        loaded_fam = f
+        break
 
-# Optionally, place an instance of the newly created family in the current view
-# Find the just-loaded family
-fam = [f for f in FilteredElementCollector(doc).OfClass(DB.Family) if f.FamilyCategory and f.Name in temp_family_path][0]
+if not loaded_fam:
+    forms.alert("Cannot find loaded family in the project.")
+    raise Exception("Family not found after load.")
 
-# Each family can have multiple symbols (types). We'll take the first available
-family_symbol = None
-for fsid in fam.GetFamilySymbolIds():
-    family_symbol = doc.GetElement(fsid)
-    break
+# Get a family symbol
+fam_sym = None
+for fsid in loaded_fam.GetFamilySymbolIds():
+    fam_sym = doc.GetElement(fsid)
+    if fam_sym:
+        break
 
-if family_symbol and not family_symbol.IsActive:
-    # Make sure the symbol is activated
+if fam_sym and not fam_sym.IsActive:
     t_activate = Transaction(doc, "Activate Family Symbol")
     t_activate.Start()
-    family_symbol.Activate()
+    fam_sym.Activate()
     t_activate.Commit()
 
-# Now place an instance at the current view's origin as an example:
-t_place = Transaction(doc, "Place Detail Component Instance")
-t_place.Start()
-doc.Create.NewFamilyInstance(DB.XYZ(0,0,0), family_symbol, current_view)
-t_place.Commit()
 
-forms.alert("Detail family created and placed successfully.")
+# -------------------------------
+# Optionally Replace Original With Family Instance
+# -------------------------------
+replace = forms.alert("Replace original selected elements/group with the new family instance?", yes=True, no=True)
+if replace:
+    t_replace = Transaction(doc, "Replace with Family Instance")
+    t_replace.Start()
+
+    # Place an instance at the centroid
+    new_instance = doc.Create.NewFamilyInstance(placement_point, fam_sym, current_view)
+    
+    # Delete original elements and detail groups if any
+    for el in elements_to_process:
+        try:
+            doc.Delete(el.Id)
+        except:
+            pass
+
+    t_replace.Commit()
+
+
+forms.alert("Detail family created successfully!")
