@@ -1,144 +1,143 @@
 # -*- coding: utf-8 -*-
-"""Select elements in drafting view and convert to detail family"""
-__title__ = 'Project to Family'
-__author__ = 'HOK'
-
 from Autodesk.Revit.DB import (
-    FilteredElementCollector,
-    FamilySymbol,
-    FamilyInstance,
-    BuiltInCategory,
     Transaction,
+    FilteredElementCollector,
+    ElementMulticategoryFilter,
+    BuiltInCategory,
     ElementTransformUtils,
+    ViewFamilyType,
     FamilyCreationOptions,
-    IFamilyLoadOptions,
-    ViewDrafting,
-    Family,
-    LinePatternElement,
-    LinePattern,
-    LinePatternSegment,
-    CurveElement,
-    LineStyle,
-    Category,
-    XYZ,
-    Line,
-    Arc,
-    View
+    SaveAsOptions
 )
-from pyrevit import revit, forms, script
+from Autodesk.Revit.UI import (
+    TaskDialog,
+    FileOpenDialog,
+    FileOpenDialogResult,
+    IExternalEventHandler,
+    IExternalApplication,
+    UIDocument
+)
+from pyrevit import revit, DB, forms
+import os
 
-# Implementing a simple family load options class
-class SimpleFamilyLoadOptions(IFamilyLoadOptions):
-    def OnFamilyFound(self, familyInUse, overwriteParameterValues):
-        overwriteParameterValues = True
-        return True
-
-    def OnSharedFamilyFound(self, sharedFamily, familyInUse, source, overwriteParameterValues):
-        overwriteParameterValues = True
-        return True
-
-# Get the current Revit document
+# Get the current document and UI
+uidoc = revit.uidoc
 doc = revit.doc
 
-# Collect all drafting views in the document
-drafting_views = FilteredElementCollector(doc)\
-    .OfClass(ViewDrafting)\
-    .ToElements()
+# Ensure we have a selection of detail elements
+selection_ids = [elId for elId in uidoc.Selection.GetElementIds()]
+if not selection_ids:
+    forms.alert("No elements selected. Please select 2D detail elements and run again.", exitscript=True)
 
-# Create a dictionary of drafting view names and their elements
-drafting_view_options = {view.Name: view for view in drafting_views}
+# Retrieve the selected elements
+selected_elements = [doc.GetElement(eid) for eid in selection_ids]
 
-# Prompt the user to select the drafting view
-selected_view_name = forms.SelectFromList.show(
-    sorted(drafting_view_options.keys()),
-    title='Select Drafting View to Convert Elements From',
-    button_name='Select'
+# Filter the selected elements to only those that are 2D Detail elements
+# Valid categories for "2D detail" could include:
+# Detail Lines (OST_Lines), Filled Regions (OST_FilledRegion), Detail Components (OST_DetailComponents),
+# Reference Planes (OST_CLines)
+valid_categories = [
+    BuiltInCategory.OST_Lines,
+    BuiltInCategory.OST_FilledRegion,
+    BuiltInCategory.OST_DetailComponents,
+    BuiltInCategory.OST_Insulation, # If needed
+    BuiltInCategory.OST_CLines,
+    BuiltInCategory.OST_DetailItems
+]
+
+filtered_selection = [el for el in selected_elements if el.Category and el.Category.Id.IntegerValue in [cat.value__ for cat in valid_categories]]
+
+if not filtered_selection:
+    forms.alert("No valid 2D detail elements selected. Please select lines, detail components, or filled regions.", exitscript=True)
+
+# Check if we're in a detail or drafting view
+current_view = doc.ActiveView
+if not (current_view.ViewType == DB.ViewType.Detail or current_view.ViewType == DB.ViewType.DraftingView):
+    forms.alert("Please run this command in a Detail or Drafting view.", exitscript=True)
+
+
+##################################
+# Family creation steps
+##################################
+
+# Path to your detail item family template
+# Update this to a valid path on your machine or company standard template.
+FAMILY_TEMPLATE_PATH = r"C:\Revit Templates\Metric Detail Item.rft"  # Example, must exist!
+
+if not os.path.exists(FAMILY_TEMPLATE_PATH):
+    forms.alert("Detail item family template not found. Update FAMILY_TEMPLATE_PATH in script.")
+    raise ValueError("Family template path invalid")
+
+app = doc.Application
+
+# Create a new family document from template
+family_doc = app.NewFamilyDocument(FAMILY_TEMPLATE_PATH)
+
+# Start a transaction in the family doc (not strictly necessary for copy)
+t_fam = Transaction(family_doc, "Prepare Family")
+t_fam.Start()
+
+# The copy/paste process: we have to map elements from the project doc to family doc
+# We'll try using ElementTransformUtils.CopyElements
+element_ids_to_copy = [el.Id for el in filtered_selection]
+
+# Copy the elements into the family document
+mapping = ElementTransformUtils.CopyElements(
+    sourceDoc=doc,
+    elementIds=element_ids_to_copy,
+    targetDoc=family_doc,
+    transform=DB.Transform.Identity
 )
 
-# Exit the script if no view is selected
-if not selected_view_name:
-    script.exit()
+t_fam.Commit()
 
-selected_view = drafting_view_options[selected_view_name]
 
-# Collect all curve elements (lines, arcs, etc.) in the selected drafting view
-curve_elements = FilteredElementCollector(doc, selected_view.Id)\
-    .OfClass(CurveElement)\
-    .ToElements()
+# Save the family to a temporary location or prompt user for location
+temp_family_path = forms.save_file(file_ext='rfa', prompt_title='Save new detail family', default_name='NewDetailFamily')
+if not temp_family_path:
+    forms.alert("No save location specified. Cancelling.")
+    family_doc.Close(False)
+    raise Exception("Family save cancelled")
 
-# Start a transaction to modify the Revit document
-transaction = Transaction(doc, 'Convert Drafting View Elements to Detail Items')
-transaction.Start()
+save_options = SaveAsOptions()
+family_doc.SaveAs(temp_family_path, save_options)
+family_doc.Close(False)
 
-try:
-    # Create a new detail item family
-    fam_doc = doc.Application.NewFamilyDocument('Metric Detail Item.rft')
+##################################
+# Load the created family into the project
+##################################
+t_load = Transaction(doc, "Load Detail Component Family")
+t_load.Start()
+loaded_family = None
+load_result = doc.LoadFamily(temp_family_path, loaded_family)
+t_load.Commit()
 
-    # Get the family editor
-    fam_editor = fam_doc.FamilyCreate
+if not load_result:
+    forms.alert("Failed to load the newly created family into the project.")
+    raise Exception("Family load failed")
 
-    # Map to store line styles
-    line_style_map = {}
 
-    # Loop through each curve element
-    for curve_elem in curve_elements:
-        # Get the geometry curve
-        geom_curve = curve_elem.GeometryCurve
+# Optionally, place an instance of the newly created family in the current view
+# Find the just-loaded family
+fam = [f for f in FilteredElementCollector(doc).OfClass(DB.Family) if f.FamilyCategory and f.Name in temp_family_path][0]
 
-        # Get the line style of the curve element
-        curve_line_style = curve_elem.LineStyle
+# Each family can have multiple symbols (types). We'll take the first available
+family_symbol = None
+for fsid in fam.GetFamilySymbolIds():
+    family_symbol = doc.GetElement(fsid)
+    break
 
-        # Check if the line style already exists in the family document
-        if curve_line_style.Name not in line_style_map:
-            # Create a new line style in the family document
-            line_cat = fam_doc.Settings.Categories.get_Item(BuiltInCategory.OST_Lines)
-            new_subcat = fam_doc.Settings.Categories.NewSubcategory(line_cat, curve_line_style.Name)
+if family_symbol and not family_symbol.IsActive:
+    # Make sure the symbol is activated
+    t_activate = Transaction(doc, "Activate Family Symbol")
+    t_activate.Start()
+    family_symbol.Activate()
+    t_activate.Commit()
 
-            # Copy line pattern and color
-            new_subcat.LineColor = curve_line_style.GraphicsStyleCategory.LineColor
-            new_subcat.SetLineWeight(curve_line_style.GraphicsStyleCategory.GetLineWeight(GraphicsStyleType.Projection), GraphicsStyleType.Projection)
-            line_pattern_id = curve_line_style.GraphicsStyleCategory.GetLinePatternId(GraphicsStyleType.Projection)
-            new_subcat.SetLinePatternId(line_pattern_id, GraphicsStyleType.Projection)
+# Now place an instance at the current view's origin as an example:
+t_place = Transaction(doc, "Place Detail Component Instance")
+t_place.Start()
+doc.Create.NewFamilyInstance(DB.XYZ(0,0,0), family_symbol, current_view)
+t_place.Commit()
 
-            # Add to map
-            line_style_map[curve_line_style.Name] = new_subcat
-
-        # Create the curve in the family document
-        if isinstance(geom_curve, Line) or isinstance(geom_curve, Arc):
-            fam_editor.NewModelCurve(geom_curve, fam_doc.ActiveView.SketchPlane)
-        else:
-            # Handle other curve types if necessary
-            pass
-
-        # Set the line style
-        new_curve_elem = fam_doc.GetElement(fam_doc.OwnerFamily.Id)
-        new_curve_elem.LineStyle = line_style_map[curve_line_style.Name]
-
-    # Save the family document to a temporary location
-    temp_family_path = r'C:\Temp\DetailItemFromDraftingView.rfa'
-    fam_doc.SaveAs(temp_family_path)
-
-    # Load the family into the project
-    family = None
-    loaded = doc.LoadFamily(temp_family_path, SimpleFamilyLoadOptions(), family)
-
-    if loaded:
-        # Get the family symbol
-        family_symbols = family.GetFamilySymbolIds()
-        if family_symbols.Count > 0:
-            symbol_id = list(family_symbols)[0]
-            symbol = doc.GetElement(symbol_id)
-
-            # Place the family instance into the current view
-            doc.Create.NewFamilyInstance(XYZ(0, 0, 0), symbol, selected_view)
-
-    # Close the family document without saving
-    fam_doc.Close(False)
-
-    # Commit the transaction
-    transaction.Commit()
-
-except Exception as e:
-    # Roll back the transaction in case of an error
-    transaction.RollBack()
-    forms.alert('An error occurred: ' + str(e), exitscript=True)
+forms.alert("Detail family created and placed successfully.")
