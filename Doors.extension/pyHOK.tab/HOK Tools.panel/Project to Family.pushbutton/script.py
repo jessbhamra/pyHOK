@@ -39,7 +39,7 @@ import os
 # -------------------------------
 # User Config
 # -------------------------------
-FAMILY_TEMPLATE_PATH = r"C:\Revit Templates\Metric Detail Item.rft"  # Update as needed
+FAMILY_TEMPLATE_PATH = r"B://Temp//detail family templates"  # Update as needed
 
 # -------------------------------
 # Setup & Validation
@@ -102,7 +102,7 @@ filtered_elements = []
 for el in elements_to_process:
     if el.Category and el.Category.Id.IntegerValue in [cat.value__ for cat in valid_cats]:
         filtered_elements.append(el)
-    # If something doesn't fit, we skip it silently or show a message
+    # If something doesn't fit, skip it silently or show a message
     # forms.alert(f"Element {el.Id} category {el.Category.Name} not supported")
 
 if not filtered_elements:
