@@ -162,8 +162,19 @@ elem_ids_col = List[DB.ElementId](elem_ids)
 opts = CopyPasteOptions()
 
 #  copy from current_view in project doc to family_doc.ActiveView
+
+# Assuming family_doc is a reference to the family document
+all_views = FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Views).ToElements()
+
+if not all_views:
+    print("No views found in the family document.")
+else:
+    for v in all_views:
+        # Print the view name, its ViewType, and ElementId
+        print("View Name: {0}, View Type: {1}, ElementId: {2}".format(v.Name, v.ViewType, v.Id))
+
 try:
-    ElementTransformUtils.CopyElements(current_view, elem_ids_col, family_doc.ActiveView, Transform.Identity, opts)
+    ElementTransformUtils.CopyElements(current_view, elem_ids_col, all_views[0], Transform.Identity, opts)
 except Exception as e:
     t_fam.RollBack()
     family_doc.Close(False)
