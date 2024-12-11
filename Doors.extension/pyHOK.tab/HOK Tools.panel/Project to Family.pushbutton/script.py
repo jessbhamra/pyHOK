@@ -99,6 +99,21 @@ for el in elements_to_process:
 if not filtered_elements:
     forms.alert("Selected elements are not supported for conversion.", exitscript=True)
 
+# Separate detail components from other elements
+detail_components = [el for el in filtered_elements if el.Category.Id.IntegerValue == BuiltInCategory.OST_DetailComponents]
+non_component_elements = [el for el in filtered_elements if el not in detail_components]
+
+# -------------------------------
+# Helper scripts
+# -------------------------------
+def load_family_into_famdoc(family_doc, family_path):
+    """Load a family from a file into the family_doc and return the Family object."""
+    fam_ref = clr.Reference[Family]()
+    res = family_doc.LoadFamily(family_path, fam_ref)
+    if res and fam_ref.Value:
+        return fam_ref.Value
+    return None
+
 # -------------------------------
 # Compute a Reference Point (Centroid) for Placement
 # -------------------------------
@@ -147,42 +162,119 @@ t_fam = Transaction(family_doc, "Create Detail Family")
 t_fam.Start()
 
 # Copy elements from project to family
-#elem_ids = [el.Id for el in filtered_elements]
-#elem_ids = [el.Id for el in filtered_elements]
 
-# Convert Python list to .NET List[ElementId]
-#elem_ids_col = List[DB.ElementId]()
-#for eid in elem_ids:
-#    elem_ids_col.Add(eid)
-#    print(eid)
+if non_component_elements:
+    elem_ids = [el.Id for el in non_component_elements]
+    elem_ids_col = List[DB.ElementId](elem_ids)
 
-elem_ids = [el.Id for el in filtered_elements]
-elem_ids_col = List[DB.ElementId](elem_ids)
-
-opts = CopyPasteOptions()
+    opts = CopyPasteOptions()
 
 #  copy from current_view in project doc to family view
 
 # Assuming family_doc is a reference to the family document
-all_views = FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Views).ToElements()
+    all_views = FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Views).ToElements()
 
-if not all_views:
-    print("No views found in the family document.")
-else:
-    for v in all_views:
+    if not all_views:
+        print("No views found in the family document.")
+   # else:
+       # for v in all_views:
         # Print the view name, its ViewType, and ElementId
-        print("View Name: {0}, View Type: {1}, ElementId: {2}".format(v.Name, v.ViewType, v.Id))
+       #         print("View Name: {0}, View Type: {1}, ElementId: {2}".format(v.Name, v.ViewType, v.Id))
 
 # Create a transform that moves the elements so their centroid aligns with the family doc origin
 
-transform = Transform.CreateTranslation(XYZ(-avg_x, -avg_y, -avg_z))
-try:
-    ElementTransformUtils.CopyElements(current_view, elem_ids_col, all_views[0], transform, opts)
-except Exception as e:
-    t_fam.RollBack()
-    family_doc.Close(False)
-    error_message = "Failed to copy elements to the family document. Error: {}".format(e)
-    forms.alert(error_message, exitscript=True)
+    transform = Transform.CreateTranslation(XYZ(-avg_x, -avg_y, -avg_z))
+    try:
+        ElementTransformUtils.CopyElements(current_view, elem_ids_col, all_views[0], transform, opts)
+    except Exception as e:
+        t_fam.RollBack()
+        family_doc.Close(False)
+        error_message = "Failed to copy elements to the family document. Error: {}".format(e)
+        forms.alert(error_message, exitscript=True)
+
+# -------------------------------
+# Handle Detail Components
+# -------------------------------
+if detail_components:
+    loaded_comp_families = {}  # To avoid loading the same family multiple times
+
+    for comp in detail_components:
+        symbol = doc.GetElement(comp.GetTypeId())
+        if not isinstance(symbol, FamilySymbol):
+            # If it's not a FamilySymbol, skip
+            continue
+
+        comp_family = symbol.Family
+        fam_name = comp_family.Name
+
+        # Check if this family is already loaded
+        if fam_name not in loaded_comp_families:
+            # Edit and save the component family to a temporary file
+            try:
+                fam_doc = doc.EditFamily(comp_family)
+            except Exception as e:
+                forms.alert("Failed to edit family '{}'. Error: {}".format(fam_name, e), exitscript=True)
+                continue
+
+            temp_dir = tempfile.gettempdir()
+            temp_family_path = os.path.join(temp_dir, fam_name + ".rfa")
+            try:
+                if os.path.exists(temp_family_path):
+                    os.remove(temp_family_path)
+                fam_doc.SaveAs(temp_family_path)
+                fam_doc.Close(False)
+            except Exception as e:
+                forms.alert("Failed to save family '{}' to temp. Error: {}".format(fam_name, e), exitscript=True)
+                continue
+
+            # Load the family into the family_doc
+            new_fam = load_family_into_famdoc(family_doc, temp_family_path)
+            if not new_fam:
+                forms.alert("Failed to load family '{}' into the new family document.".format(fam_name), exitscript=True)
+                continue
+
+            loaded_comp_families[fam_name] = new_fam
+
+        else:
+            new_fam = loaded_comp_families[fam_name]
+
+        # Find the matching symbol in the loaded family by name
+        symbol_name = symbol.Name
+        new_comp_symbol = None
+        for fsid in new_fam.GetFamilySymbolIds():
+            fs = family_doc.GetElement(fsid)
+            if fs and fs.Name == symbol_name:
+                new_comp_symbol = fs
+                break
+
+        if not new_comp_symbol:
+            forms.alert("Symbol '{}' not found in family '{}'.".format(symbol_name, fam_name), exitscript=True)
+            continue
+
+        # Ensure the symbol is active
+        if not new_comp_symbol.IsActive:
+            try:
+                t_activate = Transaction(family_doc, "Activate Symbol '{}'".format(symbol_name))
+                t_activate.Start()
+                new_comp_symbol.Activate()
+                t_activate.Commit()
+            except Exception as e:
+                forms.alert("Failed to activate symbol '{}'. Error: {}".format(symbol_name, e), exitscript=True)
+                continue
+
+        # Compute the transformed insertion point
+        comp_center = get_element_bbox_center(comp, current_view)
+        if comp_center is None:
+            forms.alert("Failed to get bounding box for component '{}'. Skipping.".format(comp.Id), exitscript=True)
+            continue
+        transformed_point = transform.OfPoint(comp_center)
+
+        # Place the detail component instance in the family document
+        try:
+            family_doc.FamilyCreate.NewFamilyInstance(transformed_point, new_comp_symbol, DB.Structure.StructuralType.NonStructural)
+        except Exception as e:
+            forms.alert("Failed to place detail component instance '{}'. Error: {}".format(symbol_name, e), exitscript=True)
+            continue
 
 t_fam.Commit()
 
