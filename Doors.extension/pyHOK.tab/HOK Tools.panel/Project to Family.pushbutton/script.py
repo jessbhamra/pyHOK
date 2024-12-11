@@ -31,6 +31,7 @@ from Autodesk.Revit.DB import (
 from pyrevit import revit, DB, forms
 from System.Collections.Generic import List
 import os
+import clr
 
 # -------------------------------
 # User Config
@@ -160,7 +161,7 @@ elem_ids_col = List[DB.ElementId](elem_ids)
 
 opts = CopyPasteOptions()
 
-#  copy from current_view in project doc to family_doc.ActiveView
+#  copy from current_view in project doc to family view
 
 # Assuming family_doc is a reference to the family document
 all_views = FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Views).ToElements()
@@ -172,8 +173,11 @@ else:
         # Print the view name, its ViewType, and ElementId
         print("View Name: {0}, View Type: {1}, ElementId: {2}".format(v.Name, v.ViewType, v.Id))
 
+# Create a transform that moves the elements so their centroid aligns with the family doc origin
+
+transform = Transform.CreateTranslation(XYZ(-avg_x, -avg_y, -avg_z))
 try:
-    ElementTransformUtils.CopyElements(current_view, elem_ids_col, all_views[0], Transform.Identity, opts)
+    ElementTransformUtils.CopyElements(current_view, elem_ids_col, all_views[0], transform, opts)
 except Exception as e:
     t_fam.RollBack()
     family_doc.Close(False)
@@ -195,26 +199,23 @@ except Exception as e:
 
 family_doc.Close(False)
 
-
-####works until here, bugs below
+#
+#### works until here, bugs below
+#
 # -------------------------------
 # Load Family into Project
 # -------------------------------
 t_load = Transaction(doc, "Load Detail Family")
 t_load.Start()
-loaded_family = DB.Family()
-try:
-    res = doc.LoadFamily(save_path, loaded_family)
-except Exception as e:
-    t_load.RollBack()
-    error_message = "Failed to load the family into the project. Error: {}".format(e)
-    forms.alert(error_message, exitscript=True)
-    raise
 
+loaded_family_ref = clr.Reference[Family]()
+res = doc.LoadFamily(save_path, loaded_family_ref)
 t_load.Commit()
 
 if not res:
     forms.alert("Failed to load the newly created family into the project.", exitscript=True)
+else:
+    loaded_family = loaded_family_ref.Value
 
 # Find the loaded family by name
 loaded_fam = None
@@ -250,7 +251,7 @@ if not fam_sym.IsActive:
 # -------------------------------
 replace = forms.alert("Do you want to replace the original selected elements/groups with the new family instance?", 
                      title="Replace Elements?", 
-                     warning=True, 
+                    # warning=True, 
                      yes=True, 
                      no=True)
 
@@ -263,7 +264,7 @@ if replace:
         new_instance = doc.Create.NewFamilyInstance(placement_point, fam_sym, current_view)
 
         # Delete original elements and detail groups
-        for el in elements_to_process:
+        for el in filtered_elements:
             try:
                 doc.Delete(el.Id)
             except Exception as del_e:
