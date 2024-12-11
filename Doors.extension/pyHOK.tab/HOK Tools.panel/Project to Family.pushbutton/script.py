@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-pyRevit script:
 Convert selected 2D detail elements (lines, filled regions, detail components, detail groups, etc.)
 into a single detail item family. Optionally replace the original selection with the newly created family instance.
 
@@ -82,7 +81,7 @@ if not elements_to_process:
 valid_cats = [
     BuiltInCategory.OST_Lines,
     BuiltInCategory.OST_FilledRegion,
-    BuiltInCategory.OST_DetailComponents,
+#    BuiltInCategory.OST_DetailComponents,
 #    BuiltInCategory.OST_InsulationLines,
 #    BuiltInCategory.OST_CLines,
 #    BuiltInCategory.OST_ReferenceLines,
@@ -196,6 +195,8 @@ except Exception as e:
 
 family_doc.Close(False)
 
+
+####works until here, bugs below
 # -------------------------------
 # Load Family into Project
 # -------------------------------
