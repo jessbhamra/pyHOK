@@ -200,7 +200,6 @@ except Exception as e:
 family_doc.Close(False)
 
 #
-#### works until here, bugs below
 #
 # -------------------------------
 # Load Family into Project
@@ -250,8 +249,7 @@ if not fam_sym.IsActive:
 # Replace Original Elements/Groups with Family Instance
 # -------------------------------
 replace = forms.alert("Do you want to replace the original selected elements/groups with the new family instance?", 
-                     title="Replace Elements?", 
-                    # warning=True, 
+                     title="Replace Elements?",  
                      yes=True, 
                      no=True)
 
