@@ -32,7 +32,7 @@ from pyrevit import revit, DB, forms
 from System.Collections.Generic import List
 import os
 import clr
-
+import tempfile
 # -------------------------------
 # User Config
 # -------------------------------
@@ -44,10 +44,6 @@ FAMILY_TEMPLATE_PATH = r"B://Temp//detail family templates/DetailItem_HOK_I.rft"
 uidoc = revit.uidoc
 doc = revit.doc
 
-selection_ids = uidoc.Selection.GetElementIds()
-if not selection_ids:
-    forms.alert("No elements selected. Please select detail elements or a detail group.", exitscript=True)
-
 current_view = doc.ActiveView
 if current_view.ViewType not in [ViewType.Detail, ViewType.DraftingView]:
     forms.alert("Please run this script in a Detail or Drafting view.", exitscript=True)
@@ -58,75 +54,46 @@ if not os.path.exists(FAMILY_TEMPLATE_PATH):
 # -------------------------------
 # Identify Selected Elements
 # -------------------------------
-selected_elements = [doc.GetElement(eid) for eid in selection_ids]
+selection = uidoc.Selection.GetElementIds()
 
-# Identify if a detail group is selected
-detail_groups = [el for el in selected_elements if isinstance(el, Group) and el.GroupType.Category.Id.IntegerValue == BuiltInCategory.OST_IOSDetailGroups]
-non_group_elements = [el for el in selected_elements if not isinstance(el, Group)]
+# Initialize separate .NET Lists for different categories
+filled_regions = List[DB.ElementId]()
+lines = List[DB.ElementId]()
+detail_components = List[DB.ElementId]()
+non_component_elements = []
 
-# Gather elements to process
-elements_to_process = []
-if detail_groups:
-    for grp in detail_groups:
-        for member_id in grp.GetMemberIds():
-            member_el = doc.GetElement(member_id)
-            elements_to_process.append(member_el)
-    elements_to_process.extend(non_group_elements)  # Optionally include non-group elements
-else:
-    elements_to_process = non_group_elements
+# Iterate through the selection
+for element_id in selection:
+    element = doc.GetElement(element_id)
+    if element:
+        # Check if the element is a filled region
+        if isinstance(element, DB.FilledRegion):
+            filled_regions.Add(element_id)
+            non_component_elements.append(element)
+        # Check if the element is a line
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_Lines):
+            lines.Add(element_id)
+            non_component_elements.append(element)
+        # Check if the element is a detail component (but not a filled region)
+        elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_DetailComponents):
+            detail_components.Add(element_id)
 
-if not elements_to_process:
-    forms.alert("No valid detail elements found. Please select 2D detail elements or a detail group.", exitscript=True)
+# Update the selection in the UI to only include filled regions and lines
+filtered_elements = List[DB.ElementId]()
+filtered_elements.AddRange(filled_regions)
+filtered_elements.AddRange(lines)
+uidoc.Selection.SetElementIds(filtered_elements)
 
-# Validate categories for 2D elements
-valid_cats = [
-    BuiltInCategory.OST_Lines,
-    BuiltInCategory.OST_FilledRegion,
-#    BuiltInCategory.OST_DetailComponents,
-#    BuiltInCategory.OST_InsulationLines,
-#    BuiltInCategory.OST_CLines,
-#    BuiltInCategory.OST_ReferenceLines,
-]
+# Validate non_component_elements before use
+if not non_component_elements:
+    forms.alert("No valid elements to process. Please select valid detail elements.", exitscript=True)
 
-filtered_elements = []
-unsupported_elements = []
-for el in elements_to_process:
-    if el.Category and el.Category.Id.IntegerValue in [cat.value__ for cat in valid_cats]:
-        filtered_elements.append(el)
-    else:
-        unsupported_elements.append(el)
+# Validate selection_ids
+selection_ids = uidoc.Selection.GetElementIds()
+if not selection_ids:
+    forms.alert("No elements selected. Please select detail elements or a detail group.", exitscript=True)
 
-if not filtered_elements:
-    forms.alert("Selected elements are not supported for conversion.", exitscript=True)
-
-# Separate detail components from other elements
-detail_components = [el for el in filtered_elements if el.Category.Id.IntegerValue == BuiltInCategory.OST_DetailComponents]
-non_component_elements = [el for el in filtered_elements if el not in detail_components]
-
-# -------------------------------
-# Helper scripts
-# -------------------------------
-def load_family_into_famdoc(family_doc, family_path):
-    """Load a family from a file into the family_doc and return the Family object."""
-    fam_ref = clr.Reference[Family]()
-    res = family_doc.LoadFamily(family_path, fam_ref)
-    if res and fam_ref.Value:
-        return fam_ref.Value
-    return None
-
-# -------------------------------
-# Compute a Reference Point (Centroid) for Placement
-# -------------------------------
-def get_element_bbox_center(e):
-    bbox = e.get_BoundingBox(current_view)
-    if bbox:
-        center = (bbox.Min + bbox.Max) * 0.5
-        return center
-    else:
-        return None
-
-centroids = [get_element_bbox_center(el) for el in filtered_elements]
-centroids = [c for c in centroids if c is not None]
+centroids = [el.get_BoundingBox(current_view).Min + el.get_BoundingBox(current_view).Max * 0.5 for el in non_component_elements if el.get_BoundingBox(current_view)]
 if centroids:
     avg_x = sum(c.X for c in centroids) / len(centroids)
     avg_y = sum(c.Y for c in centroids) / len(centroids)
@@ -143,7 +110,6 @@ family_name = forms.ask_for_string(prompt="Enter a name for the new detail famil
 if not family_name:
     forms.alert("No family name provided. Operation cancelled.", exitscript=True)
 
-# Removed 'prompt_title' from save_file
 save_path = forms.save_file(file_ext='rfa', default_name=family_name)
 if not save_path:
     forms.alert("No save location selected. Operation cancelled.", exitscript=True)
@@ -162,26 +128,16 @@ t_fam = Transaction(family_doc, "Create Detail Family")
 t_fam.Start()
 
 # Copy elements from project to family
-
 if non_component_elements:
     elem_ids = [el.Id for el in non_component_elements]
     elem_ids_col = List[DB.ElementId](elem_ids)
 
     opts = CopyPasteOptions()
 
-#  copy from current_view in project doc to family view
-
-# Assuming family_doc is a reference to the family document
     all_views = FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Views).ToElements()
 
     if not all_views:
         print("No views found in the family document.")
-   # else:
-       # for v in all_views:
-        # Print the view name, its ViewType, and ElementId
-       #         print("View Name: {0}, View Type: {1}, ElementId: {2}".format(v.Name, v.ViewType, v.Id))
-
-# Create a transform that moves the elements so their centroid aligns with the family doc origin
 
     transform = Transform.CreateTranslation(XYZ(-avg_x, -avg_y, -avg_z))
     try:
@@ -196,24 +152,24 @@ if non_component_elements:
 # Handle Detail Components
 # -------------------------------
 if detail_components:
-    loaded_comp_families = {}  # To avoid loading the same family multiple times
+    loaded_comp_families = {}
 
     for comp in detail_components:
-        symbol = doc.GetElement(comp.GetTypeId())
-        if not isinstance(symbol, FamilySymbol):
-            # If it's not a FamilySymbol, skip
+        if not isinstance(comp, DB.FamilyInstance):
             continue
 
+        symbol = comp.Symbol
+        if symbol is None:
+            continue
+
+        symbol_name = symbol.Name
         comp_family = symbol.Family
         fam_name = comp_family.Name
 
-        # Check if this family is already loaded
         if fam_name not in loaded_comp_families:
-            # Edit and save the component family to a temporary file
             try:
                 fam_doc = doc.EditFamily(comp_family)
             except Exception as e:
-                forms.alert("Failed to edit family '{}'. Error: {}".format(fam_name, e), exitscript=True)
                 continue
 
             temp_dir = tempfile.gettempdir()
@@ -224,13 +180,10 @@ if detail_components:
                 fam_doc.SaveAs(temp_family_path)
                 fam_doc.Close(False)
             except Exception as e:
-                forms.alert("Failed to save family '{}' to temp. Error: {}".format(fam_name, e), exitscript=True)
                 continue
 
-            # Load the family into the family_doc
             new_fam = load_family_into_famdoc(family_doc, temp_family_path)
             if not new_fam:
-                forms.alert("Failed to load family '{}' into the new family document.".format(fam_name), exitscript=True)
                 continue
 
             loaded_comp_families[fam_name] = new_fam
@@ -238,8 +191,6 @@ if detail_components:
         else:
             new_fam = loaded_comp_families[fam_name]
 
-        # Find the matching symbol in the loaded family by name
-        symbol_name = symbol.Name
         new_comp_symbol = None
         for fsid in new_fam.GetFamilySymbolIds():
             fs = family_doc.GetElement(fsid)
@@ -248,39 +199,25 @@ if detail_components:
                 break
 
         if not new_comp_symbol:
-            forms.alert("Symbol '{}' not found in family '{}'.".format(symbol_name, fam_name), exitscript=True)
             continue
 
-        # Ensure the symbol is active
         if not new_comp_symbol.IsActive:
-            try:
-                t_activate = Transaction(family_doc, "Activate Symbol '{}'".format(symbol_name))
-                t_activate.Start()
-                new_comp_symbol.Activate()
-                t_activate.Commit()
-            except Exception as e:
-                forms.alert("Failed to activate symbol '{}'. Error: {}".format(symbol_name, e), exitscript=True)
-                continue
+            new_comp_symbol.Activate()
+            family_doc.Regenerate()
 
-        # Compute the transformed insertion point
-        comp_center = get_element_bbox_center(comp, current_view)
-        if comp_center is None:
-            forms.alert("Failed to get bounding box for component '{}'. Skipping.".format(comp.Id), exitscript=True)
-            continue
+        comp_center = comp.get_BoundingBox(current_view).Min + comp.get_BoundingBox(current_view).Max * 0.5
         transformed_point = transform.OfPoint(comp_center)
 
-        # Place the detail component instance in the family document
         try:
             family_doc.FamilyCreate.NewFamilyInstance(transformed_point, new_comp_symbol, DB.Structure.StructuralType.NonStructural)
         except Exception as e:
-            forms.alert("Failed to place detail component instance '{}'. Error: {}".format(symbol_name, e), exitscript=True)
             continue
 
 t_fam.Commit()
 
 # Save the family
 save_options = SaveAsOptions()
-save_options.OverwriteExistingFile = True  # Allow overwriting if the file already exists
+save_options.OverwriteExistingFile = True
 
 try:
     family_doc.SaveAs(save_path, save_options)
@@ -291,8 +228,6 @@ except Exception as e:
 
 family_doc.Close(False)
 
-#
-#
 # -------------------------------
 # Load Family into Project
 # -------------------------------
@@ -308,7 +243,6 @@ if not res:
 else:
     loaded_family = loaded_family_ref.Value
 
-# Find the loaded family by name
 loaded_fam = None
 families = FilteredElementCollector(doc).OfClass(Family).ToElements()
 for f in families:
@@ -319,7 +253,6 @@ for f in families:
 if not loaded_fam:
     forms.alert("Cannot find the loaded family in the project.", exitscript=True)
 
-# Get a family symbol (type)
 fam_sym = None
 for fsid in loaded_fam.GetFamilySymbolIds():
     fam_sym = doc.GetElement(fsid)
@@ -330,16 +263,12 @@ if not fam_sym:
     forms.alert("The loaded family has no available types.", exitscript=True)
     raise Exception("No family symbols found.")
 
-# Activate the family symbol if not already active
 if not fam_sym.IsActive:
     t_activate = Transaction(doc, "Activate Family Symbol")
     t_activate.Start()
     fam_sym.Activate()
     t_activate.Commit()
 
-# -------------------------------
-# Replace Original Elements/Groups with Family Instance
-# -------------------------------
 replace = forms.alert("Do you want to replace the original selected elements/groups with the new family instance?", 
                      title="Replace Elements?",  
                      yes=True, 
@@ -350,15 +279,18 @@ if replace:
     t_replace.Start()
 
     try:
-        # Place an instance at the centroid
         new_instance = doc.Create.NewFamilyInstance(placement_point, fam_sym, current_view)
 
-        # Delete original elements and detail groups
-        for el in filtered_elements:
+        # Ensure all element IDs are in a single collection before deleting
+        all_elements_to_delete = List[DB.ElementId]()
+        all_elements_to_delete.AddRange(filtered_elements)
+        all_elements_to_delete.AddRange(detail_components)
+
+        for el_id in all_elements_to_delete:
             try:
-                doc.Delete(el.Id)
+                doc.Delete(el_id)
             except Exception as del_e:
-                delete_error = "Failed to delete element ID {}. Error: {}".format(el.Id, del_e)
+                delete_error = "Failed to delete element ID {}. Error: {}".format(el_id.IntegerValue, del_e)
                 forms.alert(delete_error, exitscript=True)
     except Exception as e:
         t_replace.RollBack()
