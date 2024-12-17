@@ -27,6 +27,10 @@ from Autodesk.Revit.DB import (
     FamilySymbol,
     ViewType,
     CopyPasteOptions,
+    Structure,
+    UV,
+    View,
+    Line,
 )
 from pyrevit import revit, DB, forms
 from System.Collections.Generic import List
@@ -59,7 +63,7 @@ selection = uidoc.Selection.GetElementIds()
 # Initialize separate .NET Lists for different categories
 filled_regions = List[DB.ElementId]()
 lines = List[DB.ElementId]()
-detail_components = List[DB.ElementId]()
+detail_components = []  # Store detail component instances
 non_component_elements = []
 
 # Iterate through the selection
@@ -76,7 +80,7 @@ for element_id in selection:
             non_component_elements.append(element)
         # Check if the element is a detail component (but not a filled region)
         elif element.Category and element.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_DetailComponents):
-            detail_components.Add(element_id)
+            detail_components.append(element)
 
 # Update the selection in the UI to only include filled regions and lines
 filtered_elements = List[DB.ElementId]()
@@ -85,7 +89,7 @@ filtered_elements.AddRange(lines)
 uidoc.Selection.SetElementIds(filtered_elements)
 
 # Validate non_component_elements before use
-if not non_component_elements:
+if not non_component_elements and not detail_components:
     forms.alert("No valid elements to process. Please select valid detail elements.", exitscript=True)
 
 # Validate selection_ids
@@ -127,19 +131,20 @@ except Exception as e:
 t_fam = Transaction(family_doc, "Create Detail Family")
 t_fam.Start()
 
-# Copy elements from project to family
+# -------------------------------
+# Copy Non-Component Elements
+# -------------------------------
+transform = Transform.CreateTranslation(XYZ(-avg_x, -avg_y, -avg_z))
+
 if non_component_elements:
     elem_ids = [el.Id for el in non_component_elements]
     elem_ids_col = List[DB.ElementId](elem_ids)
 
     opts = CopyPasteOptions()
-
     all_views = FilteredElementCollector(family_doc).OfCategory(BuiltInCategory.OST_Views).ToElements()
-
     if not all_views:
         print("No views found in the family document.")
 
-    transform = Transform.CreateTranslation(XYZ(-avg_x, -avg_y, -avg_z))
     try:
         ElementTransformUtils.CopyElements(current_view, elem_ids_col, all_views[0], transform, opts)
     except Exception as e:
@@ -154,68 +159,176 @@ if non_component_elements:
 if detail_components:
     loaded_comp_families = {}
 
+    # Acquire a reference plane for placement
+    active_view = family_doc.ActiveView
+    placement_ref = None
+
+    reference_planes = DB.FilteredElementCollector(family_doc) \
+                         .OfClass(DB.ReferencePlane) \
+                         .ToElements()
+
+    if reference_planes:
+        placement_ref = reference_planes[0].GetReference()
+    else:
+        # If no ReferencePlane exists, create one
+        ref_plane = family_doc.FamilyCreate.NewReferencePlane(
+            XYZ(0, 0, 0),
+            XYZ(1, 0, 0),
+            XYZ(0, 1, 0),
+            family_doc.ActiveView
+        )
+        placement_ref = ref_plane.GetReference()
+
     for comp in detail_components:
+        print("Element ID: {}, Type: {}, Category: {}".format(
+            comp.Id,
+            type(comp),
+            comp.Category.Name if comp.Category else "No Category"
+        ))
+
+        # Ensure element is a FamilyInstance and a detail component
         if not isinstance(comp, DB.FamilyInstance):
+            print("Element {} is not a FamilyInstance. Skipping.".format(comp.Id))
+            continue
+
+        if comp.Category is None or comp.Category.Id.IntegerValue != int(DB.BuiltInCategory.OST_DetailComponents):
+            print("Element {} is not a detail component. Skipping.".format(comp.Id))
             continue
 
         symbol = comp.Symbol
         if symbol is None:
+            print("No symbol found for component {}".format(comp.Id))
             continue
 
-        symbol_name = symbol.Name
+            # DEBUG: Check actual symbol type
+        print("Symbol type:", symbol.GetType().FullName)
+
+            # Use a parameter-based approach to get the name
+        symbol_name_param = symbol.get_Parameter(DB.BuiltInParameter.ALL_MODEL_TYPE_NAME)
+        if symbol_name_param:
+            symbol_name = symbol_name_param.AsString()
+        else:
+            print("Could not retrieve symbol name for component {}".format(comp.Id))
+            continue
+
+        if not symbol_name:
+            print("Symbol name is empty for component {}".format(comp.Id))
+            continue
+
         comp_family = symbol.Family
         fam_name = comp_family.Name
-
+ 
+    # Proceed with loading family, placing instance, etc.
+        # Load family into the family_doc if not already loaded
         if fam_name not in loaded_comp_families:
             try:
                 fam_doc = doc.EditFamily(comp_family)
-            except Exception as e:
-                continue
+                temp_dir = tempfile.gettempdir()
+                temp_family_path = os.path.join(temp_dir, fam_name + ".rfa")
 
-            temp_dir = tempfile.gettempdir()
-            temp_family_path = os.path.join(temp_dir, fam_name + ".rfa")
-            try:
                 if os.path.exists(temp_family_path):
                     os.remove(temp_family_path)
+
                 fam_doc.SaveAs(temp_family_path)
                 fam_doc.Close(False)
-            except Exception as e:
+
+                new_fam_ref = clr.Reference[Family]()
+                if family_doc.LoadFamily(temp_family_path, new_fam_ref):
+                    new_fam = new_fam_ref.Value
+                    loaded_comp_families[fam_name] = new_fam
+                else:
+                    print("Failed to load family '{}' into the family_doc.".format(fam_name))
+                    continue
+            except Exception as ex:
+                print("Error editing/loading family '{}': {}".format(fam_name, ex))
                 continue
-
-            new_fam = load_family_into_famdoc(family_doc, temp_family_path)
-            if not new_fam:
-                continue
-
-            loaded_comp_families[fam_name] = new_fam
-
         else:
             new_fam = loaded_comp_families[fam_name]
 
+        # Find the matching symbol by name in the loaded family
+      # Find the matching symbol by name in the loaded family
         new_comp_symbol = None
         for fsid in new_fam.GetFamilySymbolIds():
             fs = family_doc.GetElement(fsid)
-            if fs and fs.Name == symbol_name:
-                new_comp_symbol = fs
-                break
+            if fs:
+        # Instead of fs.Name, use a parameter:
+                fs_name_param = fs.get_Parameter(DB.BuiltInParameter.ALL_MODEL_TYPE_NAME)
+                fs_name = fs_name_param.AsString() if fs_name_param else None
+
+                if fs_name == symbol_name:
+                    new_comp_symbol = fs
+                    break
+
 
         if not new_comp_symbol:
+            print("Could not find symbol '{}' in family '{}'. Skipping.".format(symbol_name, fam_name))
             continue
 
+        # Activate symbol if not active
         if not new_comp_symbol.IsActive:
             new_comp_symbol.Activate()
             family_doc.Regenerate()
 
-        comp_center = comp.get_BoundingBox(current_view).Min + comp.get_BoundingBox(current_view).Max * 0.5
-        transformed_point = transform.OfPoint(comp_center)
+        # Determine placement point
+# Determine placement point as before
+        comp_location = None
+        loc = comp.Location
+        if loc and hasattr(loc, "Point"):
+            comp_location = loc.Point
+        else:
+            bbox = comp.get_BoundingBox(current_view)
+            if bbox:
+                comp_location = (bbox.Min + bbox.Max) * 0.5
+            else:
+                print("No bounding box for component {}. Skipping.".format(comp.Id))
+                continue
 
+        # Determine placement point
+        loc = comp.Location
+        if loc and hasattr(loc, "Rotation"):
+            original_rotation = loc.Rotation
+        else:
+            original_rotation = 0.0
+
+        # Apply the same transform for location
+        transformed_point = transform.OfPoint(comp_location)
+        uv_location = XYZ(transformed_point.X, transformed_point.Y, 0)
+
+        fs_symbol = clr.Convert(new_comp_symbol, FamilySymbol)
+        active_view = family_doc.ActiveView
+
+        if active_view is None:
+            all_views = FilteredElementCollector(family_doc).OfClass(View).ToElements()
+            for v in all_views:
+                if v.ViewType == ViewType.DraftingView or v.ViewType == ViewType.FloorPlan:
+                    active_view = v
+                    break
+
+        # Place the instance
         try:
-            family_doc.FamilyCreate.NewFamilyInstance(transformed_point, new_comp_symbol, DB.Structure.StructuralType.NonStructural)
+            new_instance = family_doc.FamilyCreate.NewFamilyInstance(
+                uv_location,
+                fs_symbol,
+                active_view
+            )
+    
+            # Rotate the instance if needed
+            if abs(original_rotation) > 1e-9:
+                rotate_axis_start = XYZ(uv_location.X, uv_location.Y, uv_location.Z)
+                rotate_axis_end = XYZ(uv_location.X, uv_location.Y, uv_location.Z + 1)
+                rotation_axis = Line.CreateBound(rotate_axis_start, rotate_axis_end)
+                ElementTransformUtils.RotateElement(family_doc, new_instance.Id, rotation_axis, original_rotation)
+
         except Exception as e:
-            continue
+            print("Failed to place detail component in family: {}".format(e))
+
+
 
 t_fam.Commit()
 
-# Save the family
+# -------------------------------
+# Save the Family
+# -------------------------------
 save_options = SaveAsOptions()
 save_options.OverwriteExistingFile = True
 
@@ -227,6 +340,7 @@ except Exception as e:
     forms.alert(error_message, exitscript=True)
 
 family_doc.Close(False)
+
 
 # -------------------------------
 # Load Family into Project
@@ -284,7 +398,7 @@ if replace:
         # Ensure all element IDs are in a single collection before deleting
         all_elements_to_delete = List[DB.ElementId]()
         all_elements_to_delete.AddRange(filtered_elements)
-        all_elements_to_delete.AddRange(detail_components)
+        all_elements_to_delete.AddRange([el.Id for el in detail_components])
 
         for el_id in all_elements_to_delete:
             try:
