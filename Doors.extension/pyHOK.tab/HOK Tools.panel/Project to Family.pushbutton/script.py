@@ -31,9 +31,12 @@ from Autodesk.Revit.DB import (
     UV,
     View,
     Line,
+    StorageType,
+    ElementId,
 )
 from pyrevit import revit, DB, forms
 from System.Collections.Generic import List
+from System import String
 import os
 import clr
 import tempfile
@@ -152,6 +155,44 @@ if non_component_elements:
         family_doc.Close(False)
         error_message = "Failed to copy elements to the family document. Error: {}".format(e)
         forms.alert(error_message, exitscript=True)
+# -------------------------------
+# Function for copying instance parameters##
+# -------------------------------
+
+
+def copy_instance_parameters(source_element, target_element):
+    for source_param in source_element.Parameters:
+        # Skip read-only parameters
+        if source_param.IsReadOnly:
+            continue
+
+        if source_param.Definition is None:
+            continue
+
+        param_name = source_param.Definition.Name
+        target_param = target_element.LookupParameter(param_name)
+        if target_param is None or target_param.IsReadOnly:
+            continue
+
+        storage_type = source_param.StorageType
+        if storage_type == StorageType.Double:
+            val = source_param.AsDouble()
+            if val is not None:
+                target_param.Set(val)
+        elif storage_type == StorageType.Integer:
+            val = source_param.AsInteger()
+            if val is not None:
+                target_param.Set(val)
+        elif storage_type == StorageType.String:
+            val = source_param.AsString()
+            if val is not None:
+                # Cast Python string to System.String to avoid overload confusion
+                target_param.Set(String(val))
+        elif storage_type == StorageType.ElementId:
+            val = source_param.AsElementId()
+            if val is not None:
+                # Ensure we pass an ElementId object explicitly
+                target_param.Set(ElementId(val.IntegerValue))
 
 # -------------------------------
 # Handle Detail Components
@@ -319,9 +360,12 @@ if detail_components:
                 rotation_axis = Line.CreateBound(rotate_axis_start, rotate_axis_end)
                 ElementTransformUtils.RotateElement(family_doc, new_instance.Id, rotation_axis, original_rotation)
 
+            copy_instance_parameters(comp, new_instance)
+
         except Exception as e:
             print("Failed to place detail component in family: {}".format(e))
 
+copy_instance_parameters(comp, new_instance)
 
 
 t_fam.Commit()
