@@ -33,6 +33,9 @@ from Autodesk.Revit.DB import (
     Line,
     StorageType,
     ElementId,
+    FamilyPlacementType, 
+    LocationCurve, 
+    LocationPoint, 
 )
 from pyrevit import revit, DB, forms
 from System.Collections.Generic import List
@@ -57,6 +60,117 @@ if current_view.ViewType not in [ViewType.Detail, ViewType.DraftingView]:
 
 if not os.path.exists(FAMILY_TEMPLATE_PATH):
     forms.alert("Detail item family template not found. Please update FAMILY_TEMPLATE_PATH in the script.", exitscript=True)
+
+# -------------------------------
+# Function for copying instance parameters##
+# -------------------------------
+
+
+def copy_instance_parameters(source_element, target_element):
+    for source_param in source_element.Parameters:
+        # Skip read-only parameters
+        if source_param.IsReadOnly:
+            continue
+
+        if source_param.Definition is None:
+            continue
+
+        param_name = source_param.Definition.Name
+        target_param = target_element.LookupParameter(param_name)
+        if target_param is None or target_param.IsReadOnly:
+            continue
+
+        storage_type = source_param.StorageType
+        if storage_type == StorageType.Double:
+            val = source_param.AsDouble()
+            if val is not None:
+                target_param.Set(val)
+        elif storage_type == StorageType.Integer:
+            val = source_param.AsInteger()
+            if val is not None:
+                target_param.Set(val)
+        elif storage_type == StorageType.String:
+            val = source_param.AsString()
+            if val is not None:
+                # Cast Python string to System.String to avoid overload confusion
+                target_param.Set(String(val))
+        elif storage_type == StorageType.ElementId:
+            val = source_param.AsElementId()
+            if val is not None:
+                # Ensure we pass an ElementId object explicitly
+                target_param.Set(ElementId(val.IntegerValue))
+
+# -------------------------------
+# Function to place detail items
+# -------------------------------
+def place_family_instance(family_doc, fs_symbol, original_instance, transform, active_view=None):
+    placement_type = fs_symbol.Family.FamilyPlacementType
+
+    if active_view is None:
+        all_views = FilteredElementCollector(family_doc).OfClass(View).ToElements()
+        for v in all_views:
+            if v.ViewType == ViewType.DraftingView or v.ViewType == ViewType.FloorPlan:
+                active_view = v
+                break
+
+    if placement_type == FamilyPlacementType.ViewBased:
+        loc = original_instance.Location
+        comp_point = None
+        if isinstance(loc, LocationPoint):
+            comp_point = loc.Point
+        else:
+            bbox = original_instance.get_BoundingBox(None)
+            if bbox:
+                comp_point = (bbox.Min + bbox.Max)*0.5
+            else:
+                print("No suitable location found for ViewBased component.")
+                return None
+
+        transformed_point = transform.OfPoint(comp_point)
+
+        # Try XYZ placement first
+        try:
+            new_instance = family_doc.FamilyCreate.NewFamilyInstance(
+                transformed_point,
+                fs_symbol,
+                active_view
+            )
+            return new_instance
+        except:
+            # If XYZ fails, try UV placement
+            uv_location = UV(transformed_point.X, transformed_point.Y)
+            new_instance = family_doc.FamilyCreate.NewFamilyInstance(
+                uv_location,
+                fs_symbol,
+                active_view
+            )
+            return new_instance
+
+    elif placement_type == FamilyPlacementType.CurveBased:
+        loc = original_instance.Location
+        if not isinstance(loc, LocationCurve):
+            print("Original instance is not curve-based or does not have a LocationCurve.")
+            return None
+
+        original_curve = loc.Curve
+        if not original_curve or not isinstance(original_curve, Line):
+            print("Original instance does not have a valid line for CurveBased placement.")
+            return None
+
+        start = transform.OfPoint(original_curve.GetEndPoint(0))
+        end = transform.OfPoint(original_curve.GetEndPoint(1))
+        transformed_line = Line.CreateBound(start, end)
+
+        new_instance = family_doc.FamilyCreate.NewFamilyInstance(
+            transformed_line,
+            fs_symbol,
+            active_view
+        )
+        return new_instance
+
+    else:
+        print("FamilyPlacementType '{}' not handled.".format(placement_type))
+        return None
 
 # -------------------------------
 # Identify Selected Elements
@@ -155,44 +269,7 @@ if non_component_elements:
         family_doc.Close(False)
         error_message = "Failed to copy elements to the family document. Error: {}".format(e)
         forms.alert(error_message, exitscript=True)
-# -------------------------------
-# Function for copying instance parameters##
-# -------------------------------
 
-
-def copy_instance_parameters(source_element, target_element):
-    for source_param in source_element.Parameters:
-        # Skip read-only parameters
-        if source_param.IsReadOnly:
-            continue
-
-        if source_param.Definition is None:
-            continue
-
-        param_name = source_param.Definition.Name
-        target_param = target_element.LookupParameter(param_name)
-        if target_param is None or target_param.IsReadOnly:
-            continue
-
-        storage_type = source_param.StorageType
-        if storage_type == StorageType.Double:
-            val = source_param.AsDouble()
-            if val is not None:
-                target_param.Set(val)
-        elif storage_type == StorageType.Integer:
-            val = source_param.AsInteger()
-            if val is not None:
-                target_param.Set(val)
-        elif storage_type == StorageType.String:
-            val = source_param.AsString()
-            if val is not None:
-                # Cast Python string to System.String to avoid overload confusion
-                target_param.Set(String(val))
-        elif storage_type == StorageType.ElementId:
-            val = source_param.AsElementId()
-            if val is not None:
-                # Ensure we pass an ElementId object explicitly
-                target_param.Set(ElementId(val.IntegerValue))
 
 # -------------------------------
 # Handle Detail Components
