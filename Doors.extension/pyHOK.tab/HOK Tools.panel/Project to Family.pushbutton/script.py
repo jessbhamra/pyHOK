@@ -274,36 +274,21 @@ if non_component_elements:
 # -------------------------------
 # Handle Detail Components
 # -------------------------------
+
 if detail_components:
     loaded_comp_families = {}
 
-    # Acquire a reference plane for placement
+    # Acquire a reference plane for placement (if needed)
     active_view = family_doc.ActiveView
-    placement_ref = None
-
-    reference_planes = DB.FilteredElementCollector(family_doc) \
-                         .OfClass(DB.ReferencePlane) \
-                         .ToElements()
-
-    if reference_planes:
-        placement_ref = reference_planes[0].GetReference()
-    else:
-        # If no ReferencePlane exists, create one
-        ref_plane = family_doc.FamilyCreate.NewReferencePlane(
-            XYZ(0, 0, 0),
-            XYZ(1, 0, 0),
-            XYZ(0, 1, 0),
-            family_doc.ActiveView
-        )
-        placement_ref = ref_plane.GetReference()
+    if active_view is None:
+        # Fallback: try to find a drafting or floor plan view for placement
+        all_views = FilteredElementCollector(family_doc).OfClass(View).ToElements()
+        for v in all_views:
+            if v.ViewType == ViewType.DraftingView or v.ViewType == ViewType.FloorPlan:
+                active_view = v
+                break
 
     for comp in detail_components:
-        print("Element ID: {}, Type: {}, Category: {}".format(
-            comp.Id,
-            type(comp),
-            comp.Category.Name if comp.Category else "No Category"
-        ))
-
         # Ensure element is a FamilyInstance and a detail component
         if not isinstance(comp, DB.FamilyInstance):
             print("Element {} is not a FamilyInstance. Skipping.".format(comp.Id))
@@ -318,25 +303,16 @@ if detail_components:
             print("No symbol found for component {}".format(comp.Id))
             continue
 
-            # DEBUG: Check actual symbol type
-        print("Symbol type:", symbol.GetType().FullName)
-
-            # Use a parameter-based approach to get the name
+        # Get the symbol (type) name
         symbol_name_param = symbol.get_Parameter(DB.BuiltInParameter.ALL_MODEL_TYPE_NAME)
-        if symbol_name_param:
-            symbol_name = symbol_name_param.AsString()
-        else:
-            print("Could not retrieve symbol name for component {}".format(comp.Id))
-            continue
-
+        symbol_name = symbol_name_param.AsString() if symbol_name_param else None
         if not symbol_name:
-            print("Symbol name is empty for component {}".format(comp.Id))
+            print("Could not retrieve symbol name for component {}".format(comp.Id))
             continue
 
         comp_family = symbol.Family
         fam_name = comp_family.Name
- 
-    # Proceed with loading family, placing instance, etc.
+
         # Load family into the family_doc if not already loaded
         if fam_name not in loaded_comp_families:
             try:
@@ -364,19 +340,15 @@ if detail_components:
             new_fam = loaded_comp_families[fam_name]
 
         # Find the matching symbol by name in the loaded family
-      # Find the matching symbol by name in the loaded family
         new_comp_symbol = None
         for fsid in new_fam.GetFamilySymbolIds():
             fs = family_doc.GetElement(fsid)
             if fs:
-        # Instead of fs.Name, use a parameter:
                 fs_name_param = fs.get_Parameter(DB.BuiltInParameter.ALL_MODEL_TYPE_NAME)
                 fs_name = fs_name_param.AsString() if fs_name_param else None
-
                 if fs_name == symbol_name:
                     new_comp_symbol = fs
                     break
-
 
         if not new_comp_symbol:
             print("Could not find symbol '{}' in family '{}'. Skipping.".format(symbol_name, fam_name))
@@ -387,13 +359,17 @@ if detail_components:
             new_comp_symbol.Activate()
             family_doc.Regenerate()
 
-        # Determine placement point
-# Determine placement point as before
-        comp_location = None
+        # Determine placement location
         loc = comp.Location
-        if loc and hasattr(loc, "Point"):
+        comp_location = None
+        original_rotation = 0.0
+
+        if hasattr(loc, "Point"):
             comp_location = loc.Point
+            if hasattr(loc, "Rotation"):
+                original_rotation = loc.Rotation
         else:
+            # If no point location, try bounding box center
             bbox = comp.get_BoundingBox(current_view)
             if bbox:
                 comp_location = (bbox.Min + bbox.Max) * 0.5
@@ -401,36 +377,25 @@ if detail_components:
                 print("No bounding box for component {}. Skipping.".format(comp.Id))
                 continue
 
-        # Determine placement point
-        loc = comp.Location
-        if loc and hasattr(loc, "Rotation"):
-            original_rotation = loc.Rotation
-        else:
-            original_rotation = 0.0
-
-        # Apply the same transform for location
         transformed_point = transform.OfPoint(comp_location)
-        uv_location = XYZ(transformed_point.X, transformed_point.Y, 0)
 
-        fs_symbol = clr.Convert(new_comp_symbol, FamilySymbol)
-        active_view = family_doc.ActiveView
+        # Check family placement type
+        placement_type = new_comp_symbol.Family.FamilyPlacementType
 
-        if active_view is None:
-            all_views = FilteredElementCollector(family_doc).OfClass(View).ToElements()
-            for v in all_views:
-                if v.ViewType == ViewType.DraftingView or v.ViewType == ViewType.FloorPlan:
-                    active_view = v
-                    break
+        if placement_type == FamilyPlacementType.ViewBased:
+            # Place by point (UV or XYZ)
+            uv_location = XYZ(transformed_point.X, transformed_point.Y, 0)
+            try:
+                new_instance = family_doc.FamilyCreate.NewFamilyInstance(
+                    uv_location,
+                    new_comp_symbol,
+                    active_view
+                )
+            except Exception as e:
+                print("Failed to place view-based detail component: {}".format(e))
+                continue
 
-        # Place the instance
-        try:
-            new_instance = family_doc.FamilyCreate.NewFamilyInstance(
-                uv_location,
-                fs_symbol,
-                active_view
-            )
-    
-            # Rotate the instance if needed
+            # Rotate if needed
             if abs(original_rotation) > 1e-9:
                 rotate_axis_start = XYZ(uv_location.X, uv_location.Y, uv_location.Z)
                 rotate_axis_end = XYZ(uv_location.X, uv_location.Y, uv_location.Z + 1)
@@ -439,10 +404,59 @@ if detail_components:
 
             copy_instance_parameters(comp, new_instance)
 
-        except Exception as e:
-            print("Failed to place detail component in family: {}".format(e))
+        elif placement_type == FamilyPlacementType.CurveBased:
+            # For line-based (curve-based) detail components, we need a line host
+            loc_curve = comp.Location
+            if loc_curve and hasattr(loc_curve, "Curve"):
+                original_curve = loc_curve.Curve
+                if original_curve:
+                    start = transform.OfPoint(original_curve.GetEndPoint(0))
+                    end = transform.OfPoint(original_curve.GetEndPoint(1))
+                    transformed_line = Line.CreateBound(start, end)
 
-copy_instance_parameters(comp, new_instance)
+                    try:
+                        new_instance = family_doc.FamilyCreate.NewFamilyInstance(
+                            transformed_line,
+                            new_comp_symbol,
+                            active_view
+                        )
+                    except Exception as e:
+                        print("Failed to place curve-based detail component: {}".format(e))
+                        continue
+
+                    # Rotation is typically already inherent in the line orientation,
+                    # but if needed, you can apply additional transformations.
+                    copy_instance_parameters(comp, new_instance)
+
+        elif placement_type == FamilyPlacementType.CurveBasedDetail:
+            # Handle this the same way as CurveBased
+            loc_curve = comp.Location
+            if loc_curve and hasattr(loc_curve, "Curve"):
+                original_curve = loc_curve.Curve
+                if original_curve:
+                    start = transform.OfPoint(original_curve.GetEndPoint(0))
+                    end = transform.OfPoint(original_curve.GetEndPoint(1))
+                    transformed_line = Line.CreateBound(start, end)
+
+                    try:
+                        new_instance = family_doc.FamilyCreate.NewFamilyInstance(
+                            transformed_line,
+                            new_comp_symbol,
+                            active_view
+                        )
+                    except Exception as e:
+                        print("Failed to place curve-based detail component: {}".format(e))
+                        continue
+
+                    # Copy parameters if needed
+                    copy_instance_parameters(comp, new_instance)
+                else:
+                    print("Original curve is invalid for CurveBasedDetail component {}. Skipping.".format(comp.Id))
+            else:
+                print("No valid LocationCurve for CurveBasedDetail component {}. Skipping.".format(comp.Id))
+
+        else:
+            print("FamilyPlacementType '{}' not supported.".format(placement_type))
 
 
 t_fam.Commit()
