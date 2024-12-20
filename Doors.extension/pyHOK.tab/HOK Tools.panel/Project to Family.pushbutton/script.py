@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """
 Convert selected 2D detail elements (lines, filled regions, detail components, detail groups, etc.)
 into a single detail item family. Optionally replace the original selection with the newly created family instance.
@@ -12,6 +12,8 @@ Steps:
 
 Requires: Revit 2022+, pyRevit environment.
 """
+__title__ = 'Project to Family'
+__author__ = 'HOK'
 
 from Autodesk.Revit.DB import (
     FilteredElementCollector,

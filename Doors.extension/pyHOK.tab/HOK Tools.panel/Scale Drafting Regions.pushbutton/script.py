@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
-__title__ = 'Scale Up Filled Regions and Lines in Drafting View'
-__author__ = 'Your Name'
+__title__ = 'Scale Filled Regions'
+__author__ = 'HOK'
 
 from Autodesk.Revit.DB import (
     FilteredElementCollector,
