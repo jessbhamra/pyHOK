@@ -13,15 +13,25 @@ from pyrevit import revit, DB, forms
 
 doc = revit.doc
 
-# Collect all detail component families:
+# Get all FamilySymbols that are detail components.
+all_symbols = []
+for fs in DB.FilteredElementCollector(doc)\
+             .OfClass(DB.FamilySymbol)\
+             .WhereElementIsElementType()\
+             .ToElements():
+    # Check if symbol category is Detail Components
+    if fs.Category and fs.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_DetailComponents):
+        all_symbols.append(fs)
+
+if not all_symbols:
+    forms.alert("No detail component family symbols found in the project.", exitscript=True)
+
+# Extract unique families from these symbols
 all_families = []
-for fs_id in doc.GetFamilySymbolIds():
-    fs = doc.GetElement(fs_id)
-    if fs is not None and fs.Category is not None:
-        if fs.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_DetailComponents):
-            fam = fs.Family
-            if fam not in all_families:
-                all_families.append(fam)
+for fs in all_symbols:
+    fam = fs.Family
+    if fam not in all_families:
+        all_families.append(fam)
 
 if not all_families:
     forms.alert("No detail component families found in the project.", exitscript=True)
@@ -36,33 +46,21 @@ source_families = forms.SelectFromList(
 if not source_families:
     forms.alert("No source family selected. Exiting.", exitscript=True)
 
-# Filter family symbols to line-based detail families to choose from as target
-# We'll just show all detail family types and let the user pick.
-# Ideally, the user chooses a line-based one.
-all_symbols = []
-for fs_id in doc.GetFamilySymbolIds():
-    fs = doc.GetElement(fs_id)
-    if fs is not None and fs.Category is not None:
-        if fs.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_DetailComponents):
-            all_symbols.append(fs)
-
-if not all_symbols:
-    forms.alert("No detail component family symbols found.", exitscript=True)
-
-target_symbol = forms.SelectFromList("Select Target Line-Based Detail Family Type", [fs.Family.Name + " : " + fs.Name for fs in all_symbols])
-if not target_symbol:
-    forms.alert("No target type selected. Exiting.", exitscript=True)
-
-# Parse the selected target symbol
-selected_target_symbol = None
+# Now ask user to pick target symbol from all_symbols
+target_symbol_label_map = {}
 for fs in all_symbols:
     label = fs.Family.Name + " : " + fs.Name
-    if label == target_symbol:
-        selected_target_symbol = fs
-        break
+    target_symbol_label_map[label] = fs
 
-if not selected_target_symbol:
-    forms.alert("Unable to find the selected target symbol in the document.", exitscript=True)
+target_symbol_choice = forms.SelectFromList(
+    "Select Target Line-Based Detail Family Type",
+    sorted(target_symbol_label_map.keys())
+)
+
+if not target_symbol_choice:
+    forms.alert("No target type selected. Exiting.", exitscript=True)
+
+selected_target_symbol = target_symbol_label_map[target_symbol_choice]
 
 # Ensure target symbol is active
 if not selected_target_symbol.IsActive:
@@ -72,9 +70,10 @@ if not selected_target_symbol.IsActive:
     doc.Regenerate()
     t.Commit()
 
-# Now we have the source families and the target symbol.
-# Find all instances of these source families in the project.
-collector = DB.FilteredElementCollector(doc).OfCategory(DB.BuiltInCategory.OST_DetailComponents).WhereElementIsNotElementType()
+# Find all instances of the chosen source families
+collector = DB.FilteredElementCollector(doc)\
+               .OfCategory(DB.BuiltInCategory.OST_DetailComponents)\
+               .WhereElementIsNotElementType()
 
 source_family_names = source_families
 instances_to_replace = []
@@ -91,22 +90,21 @@ t = DB.Transaction(doc, "Replace Detail Components with Line-Hosted Components")
 t.Start()
 
 for original_instance in instances_to_replace:
-    # Each detail item belongs to a view, we must recreate in that view.
     view_id = original_instance.OwnerViewId
     view = doc.GetElement(view_id)
+    # We only want to replace in detail or drafting views
     if view is None or view.ViewType not in [DB.ViewType.Detail, DB.ViewType.Drafting]:
-        # Skip if not in a detail/drafting view (just in case)
+        # Skip if not in a detail/drafting view
         continue
 
     bbox = original_instance.get_BoundingBox(None)
     if bbox is None:
         continue
 
+    # Determine orientation and length from bounding box
     x_length = bbox.Max.X - bbox.Min.X
     y_length = bbox.Max.Y - bbox.Min.Y
 
-    # Determine orientation and length
-    # Pick the longest dimension as the length direction
     if abs(x_length) >= abs(y_length):
         length = abs(x_length)
         angle = 0.0
@@ -122,14 +120,13 @@ for original_instance in instances_to_replace:
     midY = (bbox.Min.Y + bbox.Max.Y) / 2.0
     midZ = (bbox.Min.Z + bbox.Max.Z) / 2.0
 
-    # Compute start and end points
     start_point = DB.XYZ(midX - (length / 2.0) * math.cos(angle),
                          midY - (length / 2.0) * math.sin(angle),
                          midZ)
     end_point = DB.XYZ(midX + (length / 2.0) * math.cos(angle),
                        midY + (length / 2.0) * math.sin(angle),
                        midZ)
-    
+
     line = DB.Line.CreateBound(start_point, end_point)
     new_instance = doc.Create.NewFamilyInstance(line, selected_target_symbol, view)
 
