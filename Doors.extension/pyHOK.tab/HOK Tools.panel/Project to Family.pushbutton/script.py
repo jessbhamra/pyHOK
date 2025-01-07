@@ -10,7 +10,6 @@ Steps:
 4. Save and load the family into the project.
 5. Optionally replace original elements/group with a family instance placed at the original centroid.
 
-Requires: Revit 2022+, pyRevit environment.
 """
 __title__ = 'Project to Family'
 __author__ = 'HOK'
