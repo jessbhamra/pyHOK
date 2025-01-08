@@ -53,38 +53,41 @@ if not source_families:
 # -------------------------------------------------------------
 # 3) PROMPT USER FOR TARGET SYMBOL (SINGLE-SELECT)
 # -------------------------------------------------------------
+
+
+print("DEBUG: Found {} detail symbols in the project.".format(len(all_symbols)))
+
 symbol_label_map = {}
-
 for fs in all_symbols:
-    # 1) Ensure 'fs' actually has a 'Name' attribute
-    if not hasattr(fs, "Name"):
-        # skip this symbol if no 'Name' property at all
+    # Debug prints to see what's happening
+    print("DEBUG: Checking symbol ID={} | Family=? | SymbolName=?".format(fs.Id))
+    
+    # Safely check Family first
+    fam_obj = getattr(fs, "Family", None)
+    if not fam_obj:
+        print("     --> Skipping: No Family object on symbol.")
         continue
     
-    # 2) Also check if 'Name' is valid (not None, not empty)
-    if not fs.Name:
-        continue
+    fam_name = getattr(fam_obj, "Name", None)
+    sym_name = getattr(fs, "Name", None)
     
-    # 3) Ensure 'fs.Family' is valid
-    if not hasattr(fs, "Family"):
+    if not fam_name:
+        print("     --> Skipping: Family has no valid Name.")
         continue
-    if not fs.Family:
+    if not sym_name:
+        print("     --> Skipping: Symbol has no valid Name.")
         continue
-    
-    # 4) Ensure 'fs.Family' has a 'Name' attribute
-    if not hasattr(fs.Family, "Name"):
-        continue
-    
-    # 5) Check if family name is valid
-    if not fs.Family.Name:
-        continue
-    
-    # If we've passed all checks, safe to use .Name
-    label = fs.Family.Name + " : " + fs.Name
+
+    # Now we know we have valid names
+    label = fam_name + " : " + sym_name
     symbol_label_map[label] = fs
+    print("     --> ADDED: '{}'\n".format(label))
 
+print("DEBUG: Created {} entries in symbol_label_map.".format(len(symbol_label_map)))
 
+# Now build the sorted label list for the dialog
 sorted_labels = sorted(symbol_label_map.keys())
+print("DEBUG: Sorted labels = {}".format(sorted_labels))
 
 target_symbol_choice = forms.SelectFromList.show(
     sorted_labels,
@@ -93,6 +96,7 @@ target_symbol_choice = forms.SelectFromList.show(
     button_name="Select Target",
     multiselect=False
 )
+
 
 if not target_symbol_choice:
     forms.alert("No target type selected.", exitscript=True)
