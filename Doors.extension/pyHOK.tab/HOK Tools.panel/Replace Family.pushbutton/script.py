@@ -1,13 +1,19 @@
-"""Replace family with instance length parameter with a line-based family"""
+# -*- coding: utf-8 -*-
+"""
+Replace Families with Line-Based Detail Components
+Use this tool to swap out one or more detail component families in all drafting/detail views
+with a selected line-based detail family. It attempts to retain each element's approximate length
+and orientation using the bounding box.
+
+Select Source Families: Pick one or more existing detail component families to replace.
+Choose Target Symbol: Choose a line-based detail family type for the replacement.
+Confirm Replacement: The script finds and replaces each instance in all drafting/detail views,
+creating new line-based elements with similar length/orientation and removing the originals.
+"""
+
 __title__ = 'Replace Family'
 __author__ = 'HOK'
 
-# choose which source families (detail component families) to replace.
-# pick a target line-based detail component type.
-# - Replaces all instances of the chosen families in the entire project with line-based ones.
-# - Attempts to maintain approximate length and orientation from bounding boxes.
-# no f-strings for compatibility
-# No f-strings used to maintain compatibility
 import sys
 import math
 from pyrevit import revit, DB, forms
@@ -22,33 +28,35 @@ for fs in DB.FilteredElementCollector(doc)\
              .OfClass(DB.FamilySymbol)\
              .WhereElementIsElementType()\
              .ToElements():
+    # Must be a detail component family symbol
     if fs.Category and fs.Category.Id.IntegerValue == int(DB.BuiltInCategory.OST_DetailComponents):
         all_symbols.append(fs)
 
 if not all_symbols:
     forms.alert("No detail component family symbols found in the project.", exitscript=True)
 
-# Build a list of unique families from the symbols
-all_families = []
+# Collect unique Family objects from the symbols
+unique_families = []
 for fs in all_symbols:
     fam = fs.Family
-    if fam not in all_families:
-        all_families.append(fam)
+    if fam not in unique_families:
+        unique_families.append(fam)
 
-if not all_families:
+if not unique_families:
     forms.alert("No detail component families found in the project.", exitscript=True)
 
 # -------------------------------------------------------------
-# 2) PROMPT USER FOR SOURCE FAMILIES (MULTI-SELECT)
-#    Using SelectFromList.show(context, title, width, height, **kwargs)
+# 2) PROMPT USER FOR SOURCE FAMILIES (MULTI-SELECT) by NAME
 # -------------------------------------------------------------
+family_name_list = [fam.Name for fam in unique_families]
+
 source_families = forms.SelectFromList.show(
-    [f.Name for f in all_families],              # context (list of strings)
-    "Select Source Families to Replace",         # title
-    500,                                         # width
-    400,                                         # height
-    button_name="Select Sources",                # **kwarg
-    multiselect=True                             # **kwarg
+    family_name_list,                         # context (list of strings)
+    "Select Source Families to Replace",      # title
+    500,                                      # width
+    400,                                      # height
+    button_name="Select Sources",             # **kwarg
+    multiselect=True                          # **kwarg
 )
 
 if not source_families:
@@ -65,12 +73,12 @@ for fs in all_symbols:
 sorted_labels = sorted(symbol_label_map.keys())
 
 target_symbol_choice = forms.SelectFromList.show(
-    sorted_labels,                               # context
-    "Select Target Line-Based Detail Type",      # title
-    500,                                         # width
-    300,                                         # height
-    button_name="Select Target",                 # **kwarg
-    multiselect=False                            # **kwarg
+    sorted_labels,                            # context
+    "Select Target Line-Based Detail Type",   # title
+    500,                                      # width
+    300,                                      # height
+    button_name="Select Target",              # **kwarg
+    multiselect=False                         # **kwarg
 )
 
 if not target_symbol_choice:
@@ -87,7 +95,7 @@ if not selected_target_symbol.IsActive:
     t_activate.Commit()
 
 # -------------------------------------------------------------
-# 4) FIND & REPLACE ALL INSTANCES OF SELECTED SOURCE FAMILIES
+# 4) FIND ALL INSTANCES OF CHOSEN SOURCE FAMILIES (BY STRING NAME)
 # -------------------------------------------------------------
 collector = DB.FilteredElementCollector(doc)\
                .OfCategory(DB.BuiltInCategory.OST_DetailComponents)\
@@ -96,7 +104,18 @@ collector = DB.FilteredElementCollector(doc)\
 instances_to_replace = []
 for inst in collector:
     if isinstance(inst, DB.FamilyInstance):
-        fam_name = inst.Symbol.Family.Name
+        # 1. Check if inst.Symbol is valid
+        symbol = inst.Symbol
+        if not symbol:
+            continue  # skip if no symbol
+
+        # 2. Check if symbol.Family is valid
+        fam = symbol.Family
+        if not fam:
+            continue  # skip if no family on the symbol
+
+        # 3. Now safely call fam.Name
+        fam_name = fam.Name
         if fam_name in source_families:
             instances_to_replace.append(inst)
 
@@ -123,7 +142,6 @@ for original_instance in instances_to_replace:
     x_length = bbox.Max.X - bbox.Min.X
     y_length = bbox.Max.Y - bbox.Min.Y
 
-    # Choose the longer dimension as the "length" direction
     if abs(x_length) >= abs(y_length):
         length = abs(x_length)
         angle = 0.0
