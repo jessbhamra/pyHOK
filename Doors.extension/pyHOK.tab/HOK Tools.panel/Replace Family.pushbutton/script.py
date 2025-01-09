@@ -9,7 +9,8 @@ It attempts to retain each element's approximate length/orientation using boundi
 import sys
 import math
 from pyrevit import revit, DB, forms
-
+from Autodesk.Revit import DB
+from Autodesk.Revit.DB import DetailElementOrderUtils
 doc = revit.doc
 # -------------------------------------------------------------
 # 0) Ask user for offset distance
@@ -150,7 +151,7 @@ for inst in collector:
         
         fam_name = fam.Name
         if not fam_name:
-            print("DEBUG: Instance ID={} has Symbol's Family with no Name.".format(inst.Id))
+            #print("DEBUG: Instance ID={} has Symbol's Family with no Name.".format(inst.Id))
             continue
         
         #print("DEBUG: Instance ID={} has Family Name='{}'.".format(inst.Id, fam_name))
@@ -166,38 +167,29 @@ print("DEBUG: Total instances to replace: {}".format(len(instances_to_replace)))
 if not instances_to_replace:
     forms.alert("No instances of the selected source families found in the project.", exitscript=True)
 
-
 # Sort by element ID, so you are replacing in ascending creation order
 instances_to_replace.sort(key=lambda x: x.Id.IntegerValue)
-
 
 # -------------------------------------------------------------
 # 6) Prompt user for an extra offset (positive or negative)
 #    We'll add this to half the thickness.
 # -------------------------------------------------------------
-user_offset_str = forms.ask_for_string(
-    prompt="Enter additional offset (+/-). E.g. '1.5' or '-1.0':",
-    default="0.0"
-)
+# user_offset_str = forms.ask_for_string(
+#     prompt="Enter additional offset (+/-). E.g. '1.5' or '-1.0':",
+#     default="0.0"
+# )
 
-if user_offset_str is None:
-    forms.alert("No offset supplied. Exiting.", exitscript=True)
+# if user_offset_str is None:
+#     forms.alert("No offset supplied. Exiting.", exitscript=True)
 
-# try:
-#     user_offset_val = float(user_offset_str)
-# except ValueError:
-#     forms.alert("Could not convert '{0}' to a number. Using 0.0.".format(user_offset_str))
-#     user_offset_val = 0.0
+user_offset_str="-37/256"
+
 
 def parse_inch_fraction(s):
     """
     Parse a string representing inches in fractional or decimal format.
     Examples of valid inputs:
       "1/2"     => 0.5
-      "3 1/4"   => 3.25
-      "3.75"    => 3.75
-      "4"       => 4.0
-      "2 3/8"   => 2.375
     Returns a float (in inches).
     If parsing fails, returns 0.0
     """
@@ -240,16 +232,32 @@ def parse_inch_fraction(s):
 
     return whole + fraction
 
-
 parsed_inches = (parse_inch_fraction(user_offset_str)/12)
+# -------------------------------------------------------------
+# 6) Map original elements to their hosting views
+# -------------------------------------------------------------
+original_to_view = {}  # Mapping of original element ID -> hosting view ID
+
+for original_inst in instances_to_replace:
+    view_id = original_inst.OwnerViewId
+    if view_id and view_id != DB.ElementId.InvalidElementId:
+        original_to_view[original_inst.Id] = view_id
+
+# Debug: Print mapping
+for original_id, view_id in original_to_view.items():
+    print("DEBUG: Original Element ID {0} is hosted in View ID {1}".format(original_id, view_id))
 
 
-    
+
+# Dictionary to map original elements to their hosting views
+
+replaced_elements = {}
 # -------------------------------------------------------------
 # 7) Replace Using Bounding Box Approximation
 # -------------------------------------------------------------
 with DB.Transaction(doc, "Replace with offset") as t:
     t.Start()
+    replaced_elements = {}  # Mapping of original ID -> new ID
     for original_inst in instances_to_replace:
         view_id = original_inst.OwnerViewId
         view = doc.GetElement(view_id)
@@ -264,24 +272,22 @@ with DB.Transaction(doc, "Replace with offset") as t:
         dy = bbox.Max.Y - bbox.Min.Y
 
         if abs(dx) >= abs(dy):
-        # major axis = X, minor axis = Y
             length = abs(dx)
             thickness = abs(dy)
             angle = 0.0
             if dx < 0:
                 angle = math.pi
-            offset_sign = 1.0  # shift midY
+            offset_sign = 1.0
         else:
-        # major axis = Y, minor axis = X
             length = abs(dy)
             thickness = abs(dx)
             angle = math.pi / 2.0
             if dy < 0:
                 angle = -math.pi / 2.0
-            offset_sign = -1.0  # shift midX
-            # If user wants to flip direction, multiply offset_sign by -1
+            offset_sign = -1.0
+
         if flip_direction:
-            offset_sign = offset_sign * -1.0
+            offset_sign *= -1.0
 
         midX = (bbox.Min.X + bbox.Max.X) / 2.0
         midY = (bbox.Min.Y + bbox.Max.Y) / 2.0
@@ -291,10 +297,8 @@ with DB.Transaction(doc, "Replace with offset") as t:
         net_offset = half_thickness + parsed_inches
 
         if abs(dx) >= abs(dy):
-        # shift midY
             midY += offset_sign * net_offset
         else:
-        # shift midX
             midX += offset_sign * net_offset
 
         start_pt = DB.XYZ(
@@ -312,9 +316,7 @@ with DB.Transaction(doc, "Replace with offset") as t:
 
         try:
             new_inst = doc.Create.NewFamilyInstance(line, selected_target_symbol, view)
-
-
-
+            replaced_elements[original_inst.Id] = new_inst.Id  # Track mapping
             doc.Delete(original_inst.Id)
 
         except Exception as e:
@@ -322,8 +324,23 @@ with DB.Transaction(doc, "Replace with offset") as t:
 
     t.Commit()
 
-forms.alert(
-    "Replacement complete.\n"
-    + "Offset = half thickness plus user input.\n"
-    + "Note: 'Send to Back' may not work on family instances in Revit."
-)
+# -------------------------------------------------------------
+# 8) Adjust Draw Order: Send New Elements to Back
+# -------------------------------------------------------------
+
+# Adjust draw order for replaced elements
+with DB.Transaction(doc, "Adjust Draw Order") as t:
+    t.Start()
+    for original_id, new_id in replaced_elements.items():
+        new_element = doc.GetElement(new_id)
+        view_id = new_element.OwnerViewId
+        view = doc.GetElement(view_id)
+
+        # Ensure the view is valid
+        if view and view.ViewType in [DB.ViewType.Detail, DB.ViewType.DraftingView]:
+            try:
+                # Move the element to the back
+                DetailElementOrderUtils.SendToBack(doc, view, new_element.Id)
+            except Exception as e:
+                print("ERROR: Adjusting draw order for {} failed: {}".format(new_id.IntegerValue, e))
+    t.Commit()
