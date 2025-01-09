@@ -12,23 +12,7 @@ from pyrevit import revit, DB, forms
 from Autodesk.Revit import DB
 from Autodesk.Revit.DB import DetailElementOrderUtils
 doc = revit.doc
-# -------------------------------------------------------------
-# 0) Ask user for offset distance
-# -------------------------------------------------------------
-# offset_distance = float(forms.ask_for_string(
-#     prompt="Enter the offset distance for the short axis (face offset).",
-#     default=0.0
-# ))
-# if offset_distance is None:
-#     forms.alert("No offset specified. Exiting.", exitscript=True)
-# Ask user if they want to invert offset direction
-# flip_direction = forms.alert(
-#     "Flip offset direction?\nPress 'Yes' to invert direction, or 'No' to keep default.",
-#     yes=True,
-#     no=True
-# )
 
-flip_direction = True
 # -------------------------------------------------------------
 # 1) COLLECT ALL DETAIL FAMILY SYMBOLS
 # -------------------------------------------------------------
@@ -73,7 +57,7 @@ print("DEBUG: Source Families Selected: {}".format(source_families))
 source_families_normalized = [s.strip().lower() for s in source_families]
 
 # -------------------------------------------------------------
-# 4) PROMPT USER FOR TARGET SYMBOL (SINGLE-SELECT)
+# 3) PROMPT USER FOR TARGET SYMBOL (SINGLE-SELECT)
 # -------------------------------------------------------------
 def get_target_family_symbol():
     # Collect all detail item family symbols
@@ -129,7 +113,7 @@ def get_target_family_symbol():
 selected_target_symbol = get_target_family_symbol()
 
 # -------------------------------------------------------------
-# 5) COLLECT INSTANCES TO REPLACE
+# 4) COLLECT INSTANCES TO REPLACE
 # -------------------------------------------------------------
 
 collector = DB.FilteredElementCollector(doc)\
@@ -171,8 +155,7 @@ if not instances_to_replace:
 instances_to_replace.sort(key=lambda x: x.Id.IntegerValue)
 
 # -------------------------------------------------------------
-# 6) Prompt user for an extra offset (positive or negative)
-#    We'll add this to half the thickness.
+# 5) PROMPT USER FOR OFFSET
 # -------------------------------------------------------------
 # user_offset_str = forms.ask_for_string(
 #     prompt="Enter additional offset (+/-). E.g. '1.5' or '-1.0':",
@@ -184,15 +167,22 @@ instances_to_replace.sort(key=lambda x: x.Id.IntegerValue)
 
 user_offset_str="-37/256"
 
+# Ask user if they want to invert offset direction
+# flip_direction = forms.alert(
+#     "Flip offset direction?\nPress 'Yes' to invert direction, or 'No' to keep default.",
+#     yes=True,
+#     no=True
+# )
+
+flip_direction = True
 
 def parse_inch_fraction(s):
-    """
-    Parse a string representing inches in fractional or decimal format.
-    Examples of valid inputs:
-      "1/2"     => 0.5
-    Returns a float (in inches).
-    If parsing fails, returns 0.0
-    """
+#    Parse a string representing inches in fractional or decimal format.
+#    Examples of valid inputs:
+#      "1/2"     => 0.5
+#    Returns a float (in inches).
+#    If parsing fails, returns 0.0
+
     s = s.strip()
     whole = 0.0
     fraction = 0.0
@@ -234,9 +224,10 @@ def parse_inch_fraction(s):
 
 parsed_inches = (parse_inch_fraction(user_offset_str)/12)
 # -------------------------------------------------------------
-# 6) Map original elements to their hosting views
+# 6) MAP ORIGINAL ELEMENTS TO THEIR VIEWS
 # -------------------------------------------------------------
-original_to_view = {}  # Mapping of original element ID -> hosting view ID
+original_to_view = {} 
+ # Mapping of original element ID -> hosting view ID
 
 for original_inst in instances_to_replace:
     view_id = original_inst.OwnerViewId
@@ -244,16 +235,14 @@ for original_inst in instances_to_replace:
         original_to_view[original_inst.Id] = view_id
 
 # Debug: Print mapping
-for original_id, view_id in original_to_view.items():
-    print("DEBUG: Original Element ID {0} is hosted in View ID {1}".format(original_id, view_id))
-
-
+# for original_id, view_id in original_to_view.items():
+#    print("DEBUG: Original Element ID {0} is hosted in View ID {1}".format(original_id, view_id))
 
 # Dictionary to map original elements to their hosting views
 
 replaced_elements = {}
 # -------------------------------------------------------------
-# 7) Replace Using Bounding Box Approximation
+# 7) REPLACE USING BOUNDING BOX APPROXIMATION
 # -------------------------------------------------------------
 with DB.Transaction(doc, "Replace with offset") as t:
     t.Start()
@@ -325,7 +314,7 @@ with DB.Transaction(doc, "Replace with offset") as t:
     t.Commit()
 
 # -------------------------------------------------------------
-# 8) Adjust Draw Order: Send New Elements to Back
+# 8) ADJUST DRAW ORDER TO MOVE NEW ELEMENTS TO THE BACK
 # -------------------------------------------------------------
 
 # Adjust draw order for replaced elements
