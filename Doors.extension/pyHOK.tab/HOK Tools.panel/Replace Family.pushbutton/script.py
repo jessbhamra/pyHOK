@@ -50,17 +50,21 @@ source_families = forms.SelectFromList.show(
 if not source_families:
     forms.alert("No source families selected.", exitscript=True)
 
+print("DEBUG: Source Families Selected: {}".format(source_families))
+
+# Normalize source family names for case-insensitive comparison
+source_families_normalized = [s.strip().lower() for s in source_families]
 # -------------------------------------------------------------
 # 3) CHECK IF ANY SELECTED FAMILY IS LINE-BASED
 #     (Family.FamilyPlacementType == FamilyPlacementType.CurveBased)
 # -------------------------------------------------------------
-is_line_based_in_selection = False
-for fam in unique_fams:
-    if fam.Name in source_families:
-        # If it's recognized as line-based (CurveBased)
-        if fam.FamilyPlacementType == DB.FamilyPlacementType.CurveBased:
-            is_line_based_in_selection = True
-            break
+# is_line_based_in_selection = False
+# for fam in unique_fams:
+#     if fam.Name in source_families:
+#         # If it's recognized as line-based (CurveBased)
+#         if fam.FamilyPlacementType == DB.FamilyPlacementType.CurveBased:
+#             is_line_based_in_selection = True
+#             break
 # -------------------------------------------------------------
 # 4) PROMPT USER FOR TARGET SYMBOL (SINGLE-SELECT)
 # -------------------------------------------------------------
@@ -129,74 +133,96 @@ selected_target_symbol = get_target_family_symbol()
 # -------------------------------------------------------------
 # 5) COLLECT INSTANCES TO REPLACE
 # -------------------------------------------------------------
+
 collector = DB.FilteredElementCollector(doc)\
               .OfCategory(DB.BuiltInCategory.OST_DetailComponents)\
               .WhereElementIsNotElementType()
 
 instances_to_replace = []
+
 for inst in collector:
     if isinstance(inst, DB.FamilyInstance):
         sym = inst.Symbol
         if not sym:
+          #  print("DEBUG: Instance ID={} has no Symbol.".format(inst.Id))
             continue
         fam = sym.Family
         if not fam:
+          #  print("DEBUG: Instance ID={} has Symbol with no Family.".format(inst.Id))
             continue
         
         fam_name = fam.Name
-        if fam_name in source_families:
+        if not fam_name:
+            print("DEBUG: Instance ID={} has Symbol's Family with no Name.".format(inst.Id))
+            continue
+        
+        #print("DEBUG: Instance ID={} has Family Name='{}'.".format(inst.Id, fam_name))
+        fam_name_normalized = fam_name.strip().lower()
+        if fam_name_normalized in source_families_normalized:
+           # print("DEBUG: Instance ID={} matches source family '{}'.".format(inst.Id, fam_name))
             instances_to_replace.append(inst)
+      #  else:
+            #print("DEBUG: Instance ID={} does not match any source family.".format(inst.Id, fam_name))
+
+print("DEBUG: Total instances to replace: {}".format(len(instances_to_replace)))
 
 if not instances_to_replace:
     forms.alert("No instances of the selected source families found in the project.", exitscript=True)
 
 # -------------------------------------------------------------
-# 6) REPLACE VIA BOUNDING BOX
+# 4) Replace Using Bounding Box Approximation
 # -------------------------------------------------------------
-t = DB.Transaction(doc, "Replace Detail Components")
-t.Start()
+with DB.Transaction(doc, "Replace View-Hosted Families w/ Line-Based") as t:
+    t.Start()
 
-for original_instance in instances_to_replace:
-    view_id = original_instance.OwnerViewId
-    view = doc.GetElement(view_id)
-    # We only want to do this in Detail or Drafting views
-    if not view or view.ViewType not in [DB.ViewType.Detail, DB.ViewType.DraftingView]:
-        continue
+    for original_inst in instances_to_replace:
+        view_id = original_inst.OwnerViewId
+        view = doc.GetElement(view_id)
 
-    bbox = original_instance.get_BoundingBox(None)
-    if not bbox:
-        continue
+        # 4a) Get bounding box in that view
+        bbox = original_inst.get_BoundingBox(view)
+        if not bbox:
+            # Skip if no bounding box
+            continue
 
-    x_length = bbox.Max.X - bbox.Min.X
-    y_length = bbox.Max.Y - bbox.Min.Y
+        # 4b) Approximate orientation & length from bounding box
+        dx = bbox.Max.X - bbox.Min.X
+        dy = bbox.Max.Y - bbox.Min.Y
 
-    if abs(x_length) >= abs(y_length):
-        length = abs(x_length)
-        angle = 0.0
-        if x_length < 0:
-            angle = math.pi
-    else:
-        length = abs(y_length)
-        angle = math.pi / 2.0
-        if y_length < 0:
-            angle = -math.pi / 2.0
+        if abs(dx) >= abs(dy):
+            length = abs(dx)
+            angle = 0.0
+            if dx < 0:
+                angle = math.pi
+        else:
+            length = abs(dy)
+            angle = math.pi / 2.0
+            if dy < 0:
+                angle = -math.pi / 2.0
 
-    midX = (bbox.Min.X + bbox.Max.X) / 2.0
-    midY = (bbox.Min.Y + bbox.Max.Y) / 2.0
-    midZ = (bbox.Min.Z + bbox.Max.Z) / 2.0
+        # 4c) Compute the bounding box center
+        midX = (bbox.Min.X + bbox.Max.X) / 2.0
+        midY = (bbox.Min.Y + bbox.Max.Y) / 2.0
+        midZ = (bbox.Min.Z + bbox.Max.Z) / 2.0
 
-    start_point = DB.XYZ(midX - (length / 2.0) * math.cos(angle),
-                         midY - (length / 2.0) * math.sin(angle),
-                         midZ)
-    end_point = DB.XYZ(midX + (length / 2.0) * math.cos(angle),
-                       midY + (length / 2.0) * math.sin(angle),
-                       midZ)
+        # Start + End points for the line
+        start_pt = DB.XYZ(midX - (length / 2.0) * math.cos(angle),
+                          midY - (length / 2.0) * math.sin(angle),
+                          midZ)
+        end_pt = DB.XYZ(midX + (length / 2.0) * math.cos(angle),
+                        midY + (length / 2.0) * math.sin(angle),
+                        midZ)
 
-    line = DB.Line.CreateBound(start_point, end_point)
-    new_instance = doc.Create.NewFamilyInstance(line, selected_target_symbol, view)
+        line = DB.Line.CreateBound(start_pt, end_pt)
 
-    doc.Delete(original_instance.Id)
+        # 4d) Create the new line-based instance
+        try:
+            new_inst = doc.Create.NewFamilyInstance(line, selected_target_symbol, view)
+            # 4e) Delete the original
+            doc.Delete(original_inst.Id)
+        except Exception as e:
+            print("ERROR: Replacing instance {} failed: {}".format(original_inst.Id, e))
 
-t.Commit()
-forms.alert("Replacement completed.")
-print ()
+    t.Commit()
+
+forms.alert("Replacement complete.")
