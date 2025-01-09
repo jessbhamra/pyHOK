@@ -11,7 +11,23 @@ import math
 from pyrevit import revit, DB, forms
 
 doc = revit.doc
+# -------------------------------------------------------------
+# 0) Ask user for offset distance
+# -------------------------------------------------------------
+# offset_distance = float(forms.ask_for_string(
+#     prompt="Enter the offset distance for the short axis (face offset).",
+#     default=0.0
+# ))
+# if offset_distance is None:
+#     forms.alert("No offset specified. Exiting.", exitscript=True)
+# Ask user if they want to invert offset direction
+# flip_direction = forms.alert(
+#     "Flip offset direction?\nPress 'Yes' to invert direction, or 'No' to keep default.",
+#     yes=True,
+#     no=True
+# )
 
+flip_direction = True
 # -------------------------------------------------------------
 # 1) COLLECT ALL DETAIL FAMILY SYMBOLS
 # -------------------------------------------------------------
@@ -54,32 +70,13 @@ print("DEBUG: Source Families Selected: {}".format(source_families))
 
 # Normalize source family names for case-insensitive comparison
 source_families_normalized = [s.strip().lower() for s in source_families]
-# -------------------------------------------------------------
-# 3) CHECK IF ANY SELECTED FAMILY IS LINE-BASED
-#     (Family.FamilyPlacementType == FamilyPlacementType.CurveBased)
-# -------------------------------------------------------------
-# is_line_based_in_selection = False
-# for fam in unique_fams:
-#     if fam.Name in source_families:
-#         # If it's recognized as line-based (CurveBased)
-#         if fam.FamilyPlacementType == DB.FamilyPlacementType.CurveBased:
-#             is_line_based_in_selection = True
-#             break
+
 # -------------------------------------------------------------
 # 4) PROMPT USER FOR TARGET SYMBOL (SINGLE-SELECT)
 # -------------------------------------------------------------
 def get_target_family_symbol():
     # Collect all detail item family symbols
- #   collector = DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol).OfCategory(DB.BuiltInCategory.OST_DetailComponents)
- #    collector = DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol).OfCategory(DB.BuiltInCategory.OST_DetailComponents)
-  
-    #symbol_label_map = {}
-    # for fs in collector:
-    #     fam_obj = getattr(fs, "Family", None)
-    #     if not fam_obj or fam_obj.FamilyPlacementType != DB.FamilyPlacementType.CurveBased:
-    #         continue
-    #     label = fam_obj.Name + " : " + fs.Name
-    #     symbol_label_map[label] = fs
+
     collector = DB.FilteredElementCollector(doc).OfClass(DB.FamilySymbol).OfCategory(DB.BuiltInCategory.OST_DetailComponents)
 
     symbol_label_map = {}
@@ -95,7 +92,7 @@ def get_target_family_symbol():
         if fam_name and sym_name:
             fam_name = fam_name
             sym_name = sym_name.AsString()
-            print(fam_name, ":", sym_name,":", fam_obj.FamilyPlacementType)  # Debugging
+        #   print(fam_name, ":", sym_name,":", fam_obj.FamilyPlacementType)  # Debugging
     
             if fam_obj.FamilyPlacementType == DB.FamilyPlacementType.CurveBasedDetail:
                 label = fam_name + " : " + sym_name
@@ -169,60 +166,164 @@ print("DEBUG: Total instances to replace: {}".format(len(instances_to_replace)))
 if not instances_to_replace:
     forms.alert("No instances of the selected source families found in the project.", exitscript=True)
 
-# -------------------------------------------------------------
-# 4) Replace Using Bounding Box Approximation
-# -------------------------------------------------------------
-with DB.Transaction(doc, "Replace View-Hosted Families w/ Line-Based") as t:
-    t.Start()
 
+# Sort by element ID, so you are replacing in ascending creation order
+instances_to_replace.sort(key=lambda x: x.Id.IntegerValue)
+
+
+# -------------------------------------------------------------
+# 6) Prompt user for an extra offset (positive or negative)
+#    We'll add this to half the thickness.
+# -------------------------------------------------------------
+user_offset_str = forms.ask_for_string(
+    prompt="Enter additional offset (+/-). E.g. '1.5' or '-1.0':",
+    default="0.0"
+)
+
+if user_offset_str is None:
+    forms.alert("No offset supplied. Exiting.", exitscript=True)
+
+# try:
+#     user_offset_val = float(user_offset_str)
+# except ValueError:
+#     forms.alert("Could not convert '{0}' to a number. Using 0.0.".format(user_offset_str))
+#     user_offset_val = 0.0
+
+def parse_inch_fraction(s):
+    """
+    Parse a string representing inches in fractional or decimal format.
+    Examples of valid inputs:
+      "1/2"     => 0.5
+      "3 1/4"   => 3.25
+      "3.75"    => 3.75
+      "4"       => 4.0
+      "2 3/8"   => 2.375
+    Returns a float (in inches).
+    If parsing fails, returns 0.0
+    """
+    s = s.strip()
+    whole = 0.0
+    fraction = 0.0
+
+    # Split on space to check if there's "whole part" + "fraction part"
+    parts = s.split()
+    try:
+        if len(parts) == 2:
+            # E.g. "3 1/4"
+            # First part (whole number or decimal)
+            whole_str = parts[0]
+            whole = float(whole_str)
+
+            # Second part (fraction or decimal)
+            frac_str = parts[1]
+            if "/" in frac_str:
+                # e.g. "1/4"
+                num_str, den_str = frac_str.split("/")
+                fraction = float(num_str) / float(den_str)
+            else:
+                # Might just be decimal => "0.25"
+                fraction = float(frac_str)
+
+        else:
+            # Single chunk => either "1/2", "3.75", "4"
+            if "/" in s:
+                # fraction only
+                num_str, den_str = s.split("/")
+                fraction = float(num_str) / float(den_str)
+            else:
+                # decimal or integer
+                whole = float(s)
+
+    except Exception:
+        # If any parsing error, default to 0.0
+        return 0.0
+
+    return whole + fraction
+
+
+parsed_inches = (parse_inch_fraction(user_offset_str)/12)
+
+
+    
+# -------------------------------------------------------------
+# 7) Replace Using Bounding Box Approximation
+# -------------------------------------------------------------
+with DB.Transaction(doc, "Replace with offset") as t:
+    t.Start()
     for original_inst in instances_to_replace:
         view_id = original_inst.OwnerViewId
         view = doc.GetElement(view_id)
-
-        # 4a) Get bounding box in that view
-        bbox = original_inst.get_BoundingBox(view)
-        if not bbox:
-            # Skip if no bounding box
+        if not view or view.ViewType not in [DB.ViewType.Detail, DB.ViewType.DraftingView]:
             continue
 
-        # 4b) Approximate orientation & length from bounding box
+        bbox = original_inst.get_BoundingBox(view)
+        if not bbox:
+            continue
+
         dx = bbox.Max.X - bbox.Min.X
         dy = bbox.Max.Y - bbox.Min.Y
 
         if abs(dx) >= abs(dy):
+        # major axis = X, minor axis = Y
             length = abs(dx)
+            thickness = abs(dy)
             angle = 0.0
             if dx < 0:
                 angle = math.pi
+            offset_sign = 1.0  # shift midY
         else:
+        # major axis = Y, minor axis = X
             length = abs(dy)
+            thickness = abs(dx)
             angle = math.pi / 2.0
             if dy < 0:
                 angle = -math.pi / 2.0
+            offset_sign = -1.0  # shift midX
+            # If user wants to flip direction, multiply offset_sign by -1
+        if flip_direction:
+            offset_sign = offset_sign * -1.0
 
-        # 4c) Compute the bounding box center
         midX = (bbox.Min.X + bbox.Max.X) / 2.0
         midY = (bbox.Min.Y + bbox.Max.Y) / 2.0
         midZ = (bbox.Min.Z + bbox.Max.Z) / 2.0
 
-        # Start + End points for the line
-        start_pt = DB.XYZ(midX - (length / 2.0) * math.cos(angle),
-                          midY - (length / 2.0) * math.sin(angle),
-                          midZ)
-        end_pt = DB.XYZ(midX + (length / 2.0) * math.cos(angle),
-                        midY + (length / 2.0) * math.sin(angle),
-                        midZ)
+        half_thickness = thickness / 2.0
+        net_offset = half_thickness + parsed_inches
+
+        if abs(dx) >= abs(dy):
+        # shift midY
+            midY += offset_sign * net_offset
+        else:
+        # shift midX
+            midX += offset_sign * net_offset
+
+        start_pt = DB.XYZ(
+            midX - (length / 2.0) * math.cos(angle),
+            midY - (length / 2.0) * math.sin(angle),
+            midZ
+        )
+        end_pt = DB.XYZ(
+            midX + (length / 2.0) * math.cos(angle),
+            midY + (length / 2.0) * math.sin(angle),
+            midZ
+        )
 
         line = DB.Line.CreateBound(start_pt, end_pt)
 
-        # 4d) Create the new line-based instance
         try:
             new_inst = doc.Create.NewFamilyInstance(line, selected_target_symbol, view)
-            # 4e) Delete the original
+
+
+
             doc.Delete(original_inst.Id)
+
         except Exception as e:
-            print("ERROR: Replacing instance {} failed: {}".format(original_inst.Id, e))
+            print("ERROR: Replacing {0} failed: {1}".format(original_inst.Id, e))
 
     t.Commit()
 
-forms.alert("Replacement complete.")
+forms.alert(
+    "Replacement complete.\n"
+    + "Offset = half thickness plus user input.\n"
+    + "Note: 'Send to Back' may not work on family instances in Revit."
+)
