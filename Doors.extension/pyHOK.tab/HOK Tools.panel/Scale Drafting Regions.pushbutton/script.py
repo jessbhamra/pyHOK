@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 
-__title__ = 'Debug Scale Filled Regions'
-__author__ = 'HOK - Example Debugging Script'
+__title__ = 'Scale Selected Drafting Elements - Debug'
+__author__ = 'HOK - Extended Debugging'
 
 from Autodesk.Revit.DB import (
-    FilteredElementCollector,
-    FilledRegion,
-    FilledRegionType,
     Transaction,
-    Transform,
+    TransactionGroup,
     XYZ,
+    FilledRegion,
+    Transform,
+    CurveElement,
     ViewType,
     CurveLoop,
-    CurveElement,
-    CategoryType,
     BoundingBoxXYZ
 )
 from pyrevit import revit, forms, script
@@ -21,37 +19,29 @@ from pyrevit import revit, forms, script
 
 def get_bounding_box_center(element, view):
     """
-    Retrieves the bounding box of 'element' in the context of 'view'.
-    Returns an XYZ representing the center of the bounding box.
+    Returns the center point of 'element' in the context of 'view'.
     Returns None if bounding box is invalid.
     """
-    bbox = element.get_BoundingBox(view)
-    if bbox is None:
-        return None
-    min_pt = bbox.Min
-    max_pt = bbox.Max
-    center_x = (min_pt.X + max_pt.X) / 2.0
-    center_y = (min_pt.Y + max_pt.Y) / 2.0
-    center_z = (min_pt.Z + max_pt.Z) / 2.0
-    return XYZ(center_x, center_y, center_z)
+    try:
+        bbox = element.get_BoundingBox(view)
+        if bbox:
+            min_pt = bbox.Min
+            max_pt = bbox.Max
+            cx = (min_pt.X + max_pt.X) / 2.0
+            cy = (min_pt.Y + max_pt.Y) / 2.0
+            cz = (min_pt.Z + max_pt.Z) / 2.0
+            return XYZ(cx, cy, cz)
+    except:
+        pass
+    return None
 
 
 def create_scaling_transform(base_point, scale_factor):
     """
-    Creates a transform that scales about 'base_point'.
+    Creates a Transform that scales about 'base_point'.
     """
-    # Translate to origin
     translation_to_origin = Transform.CreateTranslation(-base_point)
-
-    # Scale around origin
     scaling = Transform.Identity.ScaleBasis(scale_factor)
-
-    # Optional: add a small translation on X or Y to see it move
-    # For example, to nudge elements 5 feet in X after scaling:
-    # nudge = Transform.CreateTranslation(XYZ(5.0, 0, 0))
-    # scaling = scaling.Multiply(nudge)
-
-    # Translate back
     translation_back = Transform.CreateTranslation(base_point)
     return translation_back.Multiply(scaling).Multiply(translation_to_origin)
 
@@ -63,10 +53,10 @@ active_view = doc.ActiveView
 if active_view.ViewType != ViewType.DraftingView:
     forms.alert('This script must be run in a drafting view.', exitscript=True)
 
-# Default large scale factor to clearly see the change
+# Get user scale factor
 scale_factor_input = forms.ask_for_string(
-    default='10.0',
-    prompt='Enter the scale factor (e.g., 10.0 to enlarge by 10x):',
+    default='2.0',
+    prompt='Enter the scale factor (e.g., 2.0 to double size):',
     title='Scale Factor'
 )
 
@@ -75,135 +65,164 @@ if not scale_factor_input:
 
 try:
     scale_factor = float(scale_factor_input)
-except ValueError:
-    forms.alert('Invalid scale factor. Please enter a numeric value.', exitscript=True)
+except:
+    forms.alert('Invalid scale factor. Must be numeric.', exitscript=True)
 
-# Collect filled regions in this drafting view
-filled_regions = FilteredElementCollector(doc, active_view.Id)\
-    .OfClass(FilledRegion)\
-    .ToElements()
+print("DEBUG: Active drafting view is Id={} Named='{}'".format(active_view.Id, active_view.Name))
+print("DEBUG: Scale factor set to {}".format(scale_factor))
 
-# Collect detail lines (CurveElements) in this drafting view
-detail_lines = FilteredElementCollector(doc, active_view.Id)\
-    .OfClass(CurveElement)\
-    .WhereElementIsNotElementType()\
-    .ToElements()
+# --------------------------------------------------------------------------
+# Get the current selection from pyRevit
+selection = revit.get_selection()
+selected_ids = selection.element_ids
 
-# Filter out any model lines, keep only detail lines (Annotation category)
-detail_lines = [
-    dl for dl in detail_lines
-    if dl.ViewSpecific
-    and dl.LineStyle
-    and dl.LineStyle.GraphicsStyleCategory
-    and dl.LineStyle.GraphicsStyleCategory.CategoryType == CategoryType.Annotation
-]
+if not selected_ids:
+    forms.alert('No elements selected. Please select lines or filled regions, then run again.', exitscript=True)
 
-print("DEBUG: Found {} filled regions.".format(len(filled_regions)))
-print("DEBUG: Found {} detail lines.".format(len(detail_lines)))
+print("DEBUG: The user selected {} element(s).".format(len(selected_ids)))
 
-if not filled_regions and not detail_lines:
-    forms.alert('No filled regions or detail lines found in the active drafting view.', exitscript=True)
 
-# Start transaction
-with Transaction(doc, 'Scale Filled Regions and Detail Lines') as tx:
-    tx.Start()
+# Separate out FilledRegions and Lines (ANY CurveElement) from that selection
+filled_regions = []
+curve_elements = []
 
-    # --- Scale Filled Regions ---
-    for fr in filled_regions:
-        print("DEBUG: Processing FilledRegion Id={}".format(fr.Id))
+for elem_id in selected_ids:
+    element = doc.GetElement(elem_id)
+    if not element:
+        print("DEBUG: Could not retrieve element for id={}.".format(elem_id))
+        continue
 
-        # 1) Get region type
-        fr_type = doc.GetElement(fr.GetTypeId())
-        if not fr_type:
-            print("DEBUG:  -> Could not retrieve FilledRegionType. Skipping.")
-            continue
+    # Check if it belongs to the active drafting view
+    if element.OwnerViewId != active_view.Id:
+        print("DEBUG: Element id={} belongs to view {}, not the active view {}. Skipping.".format(
+            elem_id, element.OwnerViewId, active_view.Id
+        ))
+        continue
 
-        # 2) Get region bounding box center, to scale about that point
-        center_point = get_bounding_box_center(fr, active_view)
-        if center_point is None:
-            print("DEBUG:  -> No valid bounding box. Skipping region.")
-            continue
+    # Identify if it's a FilledRegion
+    if isinstance(element, FilledRegion):
+        filled_regions.append(element)
+        print("DEBUG: -> Found a FilledRegion (ID={}).".format(elem_id))
+    # Identify if it's a line (CurveElement) of any kind
+    elif isinstance(element, CurveElement):
+        curve_elements.append(element)
+        print("DEBUG: -> Found a CurveElement (ID={}).".format(elem_id))
+    else:
+        print("DEBUG: -> Element id={} is not a FilledRegion or CurveElement. Skipping.".format(elem_id))
 
-        print("DEBUG:  -> BoundingBox center: {}".format(center_point))
-        print("DEBUG:  -> Scale factor: {}".format(scale_factor))
+print("DEBUG: Totals => FilledRegions: {} | CurveElements: {}".format(len(filled_regions), len(curve_elements)))
 
-        # 3) Retrieve boundaries
-        boundaries = fr.GetBoundaries()
-        if not boundaries:
-            print("DEBUG:  -> No boundaries found for this region. Skipping.")
-            continue
+if not filled_regions and not curve_elements:
+    forms.alert('No valid FilledRegion or line elements in the selection.', exitscript=True)
 
-        # 4) Build transforms
-        scaling_transform = create_scaling_transform(center_point, scale_factor)
+# --------------------------------------------------------------------------
+# We'll wrap everything in a TransactionGroup so if an error occurs,
+# we can catch it and avoid a silent rollback.
+tg = TransactionGroup(doc, 'Scale Selected Drafting Elements')
+tg.Start()
 
-        # 5) Create new boundaries
-        transformed_boundaries = []
-        boundary_count = 0
-        for boundary in boundaries:
-            if not boundary:
+try:
+    with Transaction(doc, 'Scale Selected Drafting Elements - T1') as tx:
+        tx.Start()
+
+        # -------------------------------------------------
+        # Scale FilledRegions
+        for fr in filled_regions:
+            fr_id = fr.Id
+            print("\nDEBUG: Scaling FilledRegion (ID={}).".format(fr_id))
+
+            # 1) Get bounding box center
+            center_pt = get_bounding_box_center(fr, active_view)
+            if center_pt is None:
+                print(" -> No valid bounding box center. Skipping.")
                 continue
 
-            # accumulate curves first
-            boundary_curves = []
-            for curve in boundary:
-                if curve:
-                    transformed_curve = curve.CreateTransformed(scaling_transform)
-                    boundary_curves.append(transformed_curve)
+            # 2) Build transform
+            transform = create_scaling_transform(center_pt, scale_factor)
 
-            if not boundary_curves:
+            # 3) Get boundaries
+            boundaries = fr.GetBoundaries()
+            if not boundaries:
+                print(" -> No boundaries found. Skipping.")
                 continue
 
-            new_loop = CurveLoop()
-            for bc in boundary_curves:
-                new_loop.Append(bc)
+            transformed_boundaries = []
+            boundary_count = 0
 
-            boundary_count += 1
-            transformed_boundaries.append(new_loop)
+            # Each boundary is an array of curves
+            for boundary in boundaries:
+                if not boundary:
+                    continue
 
-        print("DEBUG:  -> Created {} new boundary loops for region.".format(boundary_count))
+                boundary_curves = []
+                for c in boundary:
+                    if c:
+                        boundary_curves.append(c.CreateTransformed(transform))
 
-        # If no loops, skip
-        if not transformed_boundaries:
-            continue
+                if boundary_curves:
+                    loop = CurveLoop()
+                    for bc in boundary_curves:
+                        loop.Append(bc)
+                    transformed_boundaries.append(loop)
+                    boundary_count += 1
 
-        # 6) Create the new filled region
-        new_fr = FilledRegion.Create(doc, fr_type.Id, active_view.Id, transformed_boundaries)
+            if boundary_count == 0:
+                print(" -> Boundaries had no valid curves after transform. Skipping.")
+                continue
 
-        # 7) Delete old region
-        doc.Delete(fr.Id)
+            # 4) Create new FilledRegion
+            fr_type_id = fr.GetTypeId()
+            fr_type = doc.GetElement(fr_type_id)
+            if not fr_type:
+                print(" -> Could not retrieve FilledRegionType. Skipping.")
+                continue
 
-    # --- Scale Detail Lines ---
-    for dl in detail_lines:
-        print("DEBUG: Processing DetailLine Id={}".format(dl.Id))
+            new_fr = FilledRegion.Create(doc, fr_type.Id, active_view.Id, transformed_boundaries)
+            print(" -> Created new FilledRegion ID={}. Deleting old ID={}.".format(new_fr.Id, fr_id))
+            doc.Delete(fr_id)
 
-        geom_curve = dl.GeometryCurve
-        if not geom_curve:
-            print("DEBUG:  -> No geometry curve on detail line. Skipping.")
-            continue
+        # -------------------------------------------------
+        # Scale Lines (ANY CurveElement)
+        for ce in curve_elements:
+            ce_id = ce.Id
+            print("\nDEBUG: Scaling CurveElement (ID={}).".format(ce_id))
 
-        center_point = get_bounding_box_center(dl, active_view)
-        if center_point is None:
-            # If bounding box is None, fallback to global origin
-            center_point = XYZ(0, 0, 0)
-            print("DEBUG:  -> No bounding box for detail line. Using (0,0,0) as base.")
+            # 1) Check bounding box
+            center_pt = get_bounding_box_center(ce, active_view)
+            if center_pt is None:
+                center_pt = XYZ(0, 0, 0)
+                print(" -> No bounding box center, using global origin (0,0,0).")
 
-        print("DEBUG:  -> Detail line bounding box center: {}".format(center_point))
+            # 2) Build transform
+            transform = create_scaling_transform(center_pt, scale_factor)
 
-        scaling_transform = create_scaling_transform(center_point, scale_factor)
+            # 3) Get geometry curve
+            geom_curve = ce.GeometryCurve
+            if not geom_curve:
+                print(" -> No geometry curve. Skipping.")
+                continue
 
-        # Transform the curve
-        transformed_curve = geom_curve.CreateTransformed(scaling_transform)
+            # 4) Create new curve with transform
+            new_curve = geom_curve.CreateTransformed(transform)
+            new_ce = doc.Create.NewDetailCurve(active_view, new_curve)
 
-        # Create new detail line
-        new_dl = doc.Create.NewDetailCurve(active_view, transformed_curve)
+            # Try to copy line style if available
+            old_style = ce.LineStyle
+            if old_style:
+                new_ce.LineStyle = old_style
+                print(" -> Copied line style from old line to new line.")
 
-        # Copy original line style
-        if dl.LineStyle:
-            new_dl.LineStyle = dl.LineStyle
+            doc.Delete(ce_id)
+            print(" -> Created new line ID={} and deleted old ID={}.".format(new_ce.Id, ce_id))
 
-        # Delete the old line
-        doc.Delete(dl.Id)
+        tx.Commit()
 
-    tx.Commit()
+    tg.Assimilate()
 
-forms.alert('Filled regions and detail lines have been scaled successfully.', exitscript=True)
+    forms.alert('Scaling transaction completed. If geometry is unchanged, check debug output.', exitscript=True)
+
+except Exception as ex:
+    # If something fails mid-transaction, we roll back
+    print("\nDEBUG: Exception => {}".format(ex))
+    tg.RollBack()
+    forms.alert('Error occurred; transaction rolled back:\n{}'.format(ex), exitscript=True)
