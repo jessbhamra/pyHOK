@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 
-__title__ = 'Scale Selection as One Group'
-__author__ = 'HOK - Single Center Example (with user scale input)'
+__title__ = 'SuperScale'
+__author__ = 'HOK'
 
+""" Scale detail lines and detail regions together"""
 from Autodesk.Revit.DB import (
     Transaction,
     XYZ,
@@ -17,10 +18,7 @@ from pyrevit import revit, forms, script
 
 
 def get_combined_bounding_box_center(doc, view, element_ids):
-    """
-    Computes a bounding box that encapsulates all elements in 'element_ids'.
-    Returns the center point (XYZ) or None if no valid bounding boxes.
-    """
+   
     min_x = None
     min_y = None
     min_z = None
