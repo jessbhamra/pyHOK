@@ -1,27 +1,39 @@
 # -*- coding: utf-8 -*-
-# Family Purge (biggest-first) for pyRevit — API-only, SILENT, no renaming, CSV export
-# - Scans editable, non in-place families
+# Family Purge (biggest-first) for pyRevit — API-only, SILENT, deeper purge, CSV, no rename
+# - Deeper purge set (imports, image instances/types, unused nested symbols, materials, fill patterns,
+#   appearance assets, best-effort element types). Optional: dimensions & extra views.
+# - Silent transactions for deletes, dialog suppression for SaveAs warnings (constraints/joins/etc.)
 # - Ranks by temp SaveAs to %TEMP%/<FamilyName>.rfa (no rename risk)
-# - Purges via API (imports, images, unused family types, unused materials, deletable element types)
 # - Reloads into project (overwrite) with NO project transaction
-# - Suppresses warnings in purge transactions
-# - Emits CSV to %TEMP%\pyrevit_family_purge\ and prints a clickable link
+# - Emits CSV to %TEMP%\pyrevit_family_purge and prints a clickable Markdown link
 
 from Autodesk.Revit import DB, UI
 from Autodesk.Revit.DB import (
     Transaction, FilteredElementCollector, Family, SaveAsOptions, ElementId,
-    ImportInstance, ImageType, ElementType, Material, FamilyType
+    ImportInstance, ImageType, ImageInstance, ElementType, Material, FamilyType,
+    FamilySymbol, FamilyInstance, Dimension, View, ViewType, FilledRegionType,
+    FillPatternElement, AppearanceAssetElement
+)
+from Autodesk.Revit.UI import UIApplication
+from Autodesk.Revit.UI.Events import (
+    DialogBoxShowingEventArgs, TaskDialogShowingEventArgs, MessageBoxShowingEventArgs
 )
 from pyrevit import forms, revit, script, coreutils
 import System
 from System.IO import Path, File, FileInfo, Directory
 from System.Text import UTF8Encoding
-import re, uuid, traceback, datetime
+import re, traceback, datetime
 
 uidoc = __revit__.ActiveUIDocument
 doc   = uidoc.Document
 logger = coreutils.logger.get_logger(__name__)
 output = script.get_output()
+
+# ----------------------------
+# CONFIG TOGGLES
+# ----------------------------
+DELETE_UNLABELED_UNLOCKED_DIMENSIONS = False   # set True to free more space (risk: remove benign constraints)
+DELETE_EXTRA_VIEWS = False                    # set True to keep 1 plan + 1 3D; remove Drafting/extra 3D/etc.
 
 # ----------------------------
 # Failure suppression (silent transactions)
@@ -46,6 +58,72 @@ def _silent_tx(rdoc, name):
     opts.SetFailuresPreprocessor(_SwallowFailures())
     t.SetFailureHandlingOptions(opts)
     return t
+
+# ----------------------------
+# Dialog suppressor for SaveAs warnings (constraints/joins/alignment/etc.)
+# ----------------------------
+# Substrings to match in dialog text; all compared in lowercase
+_SUPPRESS_SUBSTRINGS = [
+    u"constraint", u"constraints",
+    u"can't keep", u"cannot keep", u"keep elements joined",
+    u"alignment",
+    u"references have been deleted",
+    u"dimension will be deleted",
+    u"lock",
+]
+
+# Py2/Py3 compat for IronPython
+try:
+    unicode
+except NameError:
+    unicode = str
+
+def _should_suppress_dialog(args):
+    try:
+        texts = []
+        # TaskDialog variant
+        if isinstance(args, TaskDialogShowingEventArgs):
+            for attr in ("Instruction", "Message", "MainInstruction", "DialogId"):
+                v = getattr(args, attr, None)
+                if v:
+                    texts.append(unicode(v))
+        # MessageBox variant
+        elif isinstance(args, MessageBoxShowingEventArgs):
+            v = getattr(args, "Message", None)
+            if v:
+                texts.append(unicode(v))
+        # Fallback: try common base properties if any
+        else:
+            for attr in ("Message", "DialogId"):
+                v = getattr(args, attr, None)
+                if v:
+                    texts.append(unicode(v))
+        s = u" | ".join([t.lower() for t in texts])
+        return any(sub in s for sub in _SUPPRESS_SUBSTRINGS)
+    except:
+        return False
+
+def _dialog_handler(sender, args):
+    try:
+        if _should_suppress_dialog(args):
+            # 1 == OK for TaskDialog/MessageBox
+            args.OverrideResult(1)
+    except:
+        pass
+
+class _DialogSuppressor(object):
+    """Context manager to hook/unhook UIApplication.DialogBoxShowing."""
+    def __enter__(self):
+        try:
+            __revit__.DialogBoxShowing += _dialog_handler
+        except:
+            pass
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            __revit__.DialogBoxShowing -= _dialog_handler
+        except:
+            pass
 
 # ----------------------------
 # Temp file helpers (NO RENAME)
@@ -90,7 +168,9 @@ def save_as_exact_name(family_doc, exact_path):
     d = Path.GetDirectoryName(exact_path)
     if d and not Directory.Exists(d):
         Directory.CreateDirectory(d)
-    family_doc.SaveAs(exact_path, sao)
+    # Suppress SaveAs dialogs (constraints/joins/etc.)
+    with _DialogSuppressor():
+        family_doc.SaveAs(exact_path, sao)
     if not File.Exists(exact_path) or FileInfo(exact_path).Length == 0:
         raise Exception("Temp SaveAs failed or produced empty file: {}".format(exact_path))
 
@@ -141,12 +221,15 @@ def delete_elements(fdoc, ids, label):
         t.Commit()
     return deleted
 
+# Imports & Images (instances + types)
 def purge_imports_and_images(fdoc):
     to_del = []
     to_del.extend([e.Id for e in FilteredElementCollector(fdoc).OfClass(ImportInstance)])
+    to_del.extend([e.Id for e in FilteredElementCollector(fdoc).OfClass(ImageInstance)])
     to_del.extend([e.Id for e in FilteredElementCollector(fdoc).OfClass(ImageType)])
     return delete_elements(fdoc, to_del, "Imports & Images")
 
+# Unused Family TYPES (within this family)
 def purge_unused_family_types(fdoc):
     fm = fdoc.FamilyManager
     try:
@@ -167,6 +250,26 @@ def purge_unused_family_types(fdoc):
             pass
     return delete_elements(fdoc, to_del, "Unused Family Types")
 
+# Unused nested FamilySymbols (no placed FamilyInstance uses them)
+def purge_unused_nested_symbols(fdoc):
+    used = set()
+    for inst in FilteredElementCollector(fdoc).OfClass(FamilyInstance):
+        try:
+            sym = inst.Symbol
+            if sym:
+                used.add(sym.Id.IntegerValue)
+        except:
+            pass
+    to_del = []
+    for sym in FilteredElementCollector(fdoc).OfClass(FamilySymbol):
+        try:
+            if sym.Id.IntegerValue not in used:
+                to_del.append(sym.Id)
+        except:
+            pass
+    return delete_elements(fdoc, to_del, "Unused Nested Family Symbols")
+
+# Materials & dependencies --------------------------------
 def _collect_used_material_ids(fdoc):
     used = set()
     elems = FilteredElementCollector(fdoc).WhereElementIsNotElementType().ToElements()
@@ -195,6 +298,57 @@ def purge_unused_materials(fdoc):
             pass
     return delete_elements(fdoc, to_del, "Unused Materials")
 
+# Fill patterns not referenced by any material (and from FilledRegionTypes)
+def purge_unused_fill_patterns(fdoc):
+    used = set()
+    for m in FilteredElementCollector(fdoc).OfClass(Material):
+        try:
+            for pid in (
+                m.SurfaceForegroundPatternId,
+                m.SurfaceBackgroundPatternId,
+                m.CutForegroundPatternId,
+                m.CutBackgroundPatternId
+            ):
+                if pid and pid != ElementId.InvalidElementId:
+                    used.add(pid.IntegerValue)
+        except:
+            pass
+    for frt in FilteredElementCollector(fdoc).OfClass(FilledRegionType):
+        try:
+            pid = frt.FillPatternId
+            if pid and pid != ElementId.InvalidElementId:
+                used.add(pid.IntegerValue)
+        except:
+            pass
+    to_del = []
+    for fp in FilteredElementCollector(fdoc).OfClass(FillPatternElement):
+        try:
+            if fp.Id.IntegerValue not in used:
+                to_del.append(fp.Id)
+        except:
+            pass
+    return delete_elements(fdoc, to_del, "Unused Fill Patterns")
+
+# Appearance assets not used by any material
+def purge_unused_appearance_assets(fdoc):
+    used = set()
+    for m in FilteredElementCollector(fdoc).OfClass(Material):
+        try:
+            aid = m.AppearanceAssetId
+            if aid and aid != ElementId.InvalidElementId:
+                used.add(aid.IntegerValue)
+        except:
+            pass
+    to_del = []
+    for aa in FilteredElementCollector(fdoc).OfClass(AppearanceAssetElement):
+        try:
+            if aa.Id.IntegerValue not in used:
+                to_del.append(aa.Id)
+        except:
+            pass
+    return delete_elements(fdoc, to_del, "Unused Appearance Assets")
+
+# Best-effort deletion of generic element types (skip FamilyTypes handled above)
 def purge_unused_element_types_best_effort(fdoc):
     types = FilteredElementCollector(fdoc).WhereElementIsElementType().ToElements()
     famtype_ids = set()
@@ -212,11 +366,56 @@ def purge_unused_element_types_best_effort(fdoc):
             pass
     return delete_elements(fdoc, to_del, "Unused Element Types (best-effort)")
 
+# Optional: Unlabeled & unlocked dimensions
+def purge_unlabeled_unlocked_dimensions(fdoc):
+    if not DELETE_UNLABELED_UNLOCKED_DIMENSIONS:
+        return 0
+    to_del = []
+    for d in FilteredElementCollector(fdoc).OfClass(Dimension):
+        try:
+            if d.FamilyLabel is None and not d.IsLocked:
+                to_del.append(d.Id)
+        except:
+            pass
+    return delete_elements(fdoc, to_del, "Unlabeled & Unlocked Dimensions")
+
+# Optional: extra views — keep 1 plan + 1 3D, delete drafting/extra 3D/duplicates
+def purge_extra_views(fdoc):
+    if not DELETE_EXTRA_VIEWS:
+        return 0
+    views = list(FilteredElementCollector(fdoc).OfClass(View))
+    keep = set()
+    plan = next((v for v in views if not v.IsTemplate and v.ViewType in (ViewType.FloorPlan, ViewType.CeilingPlan)), None)
+    if plan:
+        keep.add(plan.Id.IntegerValue)
+    v3d = next((v for v in views if not v.IsTemplate and v.ViewType == ViewType.ThreeD), None)
+    if v3d:
+        keep.add(v3d.Id.IntegerValue)
+    to_del = []
+    for v in views:
+        try:
+            if v.IsTemplate:
+                continue
+            if v.ViewType in (ViewType.Legend, ViewType.DraftingView, ViewType.DrawingSheet, ViewType.Schedule):
+                to_del.append(v.Id)
+                continue
+            if v.Id.IntegerValue in keep:
+                continue
+            to_del.append(v.Id)
+        except:
+            pass
+    return delete_elements(fdoc, to_del, "Extra Views")
+
 def purge_family_api_only(fdoc):
     total = 0
     total += purge_imports_and_images(fdoc)
+    total += purge_unused_nested_symbols(fdoc)
     total += purge_unused_family_types(fdoc)
     total += purge_unused_materials(fdoc)
+    total += purge_unused_fill_patterns(fdoc)
+    total += purge_unused_appearance_assets(fdoc)
+    total += purge_unlabeled_unlocked_dimensions(fdoc)
+    total += purge_extra_views(fdoc)
     total += purge_unused_element_types_best_effort(fdoc)
     return total
 
@@ -244,7 +443,7 @@ for fam in candidates:
         famdoc = doc.EditFamily(fam)
         pre_path = build_preserving_name_path(famdoc)
         if pre_path:
-            save_as_exact_name(famdoc, pre_path)   # %TEMP%/<FamilyName>.rfa
+            save_as_exact_name(famdoc, pre_path)   # %TEMP%/<FamilyName>.rfa  (dialogs suppressed)
             size = file_size_kb(pre_path)
             pre_kb = size if size is not None else -1
             cleanup_temp(pre_path)
@@ -256,8 +455,10 @@ for fam in candidates:
         logger.debug("Pre-size failed for '{}'\n{}".format(fam.Name, traceback.format_exc()))
     finally:
         if famdoc:
-            try: famdoc.Close(False)
-            except: pass
+            try:
+                famdoc.Close(False)
+            except:
+                pass
     rank_info.append((fam, pre_kb, can_size))
 
 rank_info.sort(key=lambda x: x[1], reverse=True)
@@ -267,7 +468,7 @@ worklist = rank_info if process_all else rank_info[:n_default]
 # Purge + reload (silent) — no renaming
 # ----------------------------
 results = []
-with forms.ProgressBar(title='Purging families (silent, no-rename)...', step=1, cancellable=True) as pb:
+with forms.ProgressBar(title='Purging families (silent, deeper purge)...', step=1, cancellable=True) as pb:
     for i, (fam, pre_kb, can_size) in enumerate(worklist):
         if pb.cancelled:
             break
@@ -295,7 +496,7 @@ with forms.ProgressBar(title='Purging families (silent, no-rename)...', step=1, 
                 post_path = build_preserving_name_path(famdoc)
                 if post_path:
                     try:
-                        save_as_exact_name(famdoc, post_path)
+                        save_as_exact_name(famdoc, post_path)  # dialogs suppressed
                         post_kb = file_size_kb(post_path)
                     except Exception:
                         post_kb = None
@@ -323,43 +524,49 @@ with forms.ProgressBar(title='Purging families (silent, no-rename)...', step=1, 
             logger.error(traceback.format_exc())
         finally:
             if famdoc:
-                try: famdoc.Close(False)
-                except: pass
+                try:
+                    famdoc.Close(False)
+                except:
+                    pass
             cleanup_temp(post_path)
 
         results.append(row)
 
 # ----------------------------
-# Report (list-of-lists) + CSV export
+# Report (safe strings) + CSV export + Markdown file link
 # ----------------------------
 headers = ["Family", "Pre Size (KB)", "Post Size (KB)", "Saved (KB)", "Deleted Items", "Status"]
 
-def _fmt(v): return "-" if v is None else v
+def _as_text(v):
+    if v is None:
+        return u"-"
+    return v if isinstance(v, unicode) else unicode(v)
 
-results_sorted = sorted(results, key=lambda r: (r.get("Saved (KB)") or 0, r.get("Pre Size (KB)") or 0), reverse=True)
+results_sorted = sorted(
+    results,
+    key=lambda r: (r.get("Saved (KB)") or 0, r.get("Pre Size (KB)") or 0),
+    reverse=True,
+)
 
 table_rows = []
 for r in results_sorted:
     table_rows.append([
-        r.get("Family", ""),
-        _fmt(r.get("Pre Size (KB)")),
-        _fmt(r.get("Post Size (KB)")),
-        _fmt(r.get("Saved (KB)")),
-        _fmt(r.get("Deleted Items")),
-        r.get("Status") or "",
+        _as_text(r.get("Family", "")),
+        _as_text(r.get("Pre Size (KB)")),
+        _as_text(r.get("Post Size (KB)")),
+        _as_text(r.get("Saved (KB)")),
+        _as_text(r.get("Deleted Items")),
+        _as_text(r.get("Status") or ""),
     ])
 
-output.print_md("### Family Purge Results (silent, API-only, no-rename, largest-first)")
+output.print_md("### Family Purge Results (silent, API-only, deeper purge, no-rename, largest-first)")
 output.print_table(table_rows, columns=headers)
 
 total_saved = sum([(r.get("Saved (KB)") or 0) for r in results_sorted])
 output.print_md("**Total saved ~ {} KB (~{:.2f} MB)**".format(total_saved, total_saved/1024.0))
 
-# ---- CSV: write to %TEMP%\pyrevit_family_purge and linkify
 def _csv_escape(s):
-    if s is None:
-        s = ""
-    s = unicode(s) if not isinstance(s, unicode) else s
+    s = _as_text(s)
     s = s.replace(u'"', u'""')
     if u',' in s or u'\n' in s or u'"' in s:
         return u'"' + s + u'"'
@@ -370,7 +577,6 @@ def write_csv_and_link(rows, headers, total_saved_kb):
     proj = _sanitize_for_file(doc.Title)
     csv_path = Path.Combine(temp_dir(), u"FamilyPurgeResults_{}_{}.csv".format(proj, ts))
 
-    # Use .NET StreamWriter to avoid IronPython csv+unicode quirks; add UTF-8 BOM for Excel
     sw = System.IO.StreamWriter(csv_path, False, UTF8Encoding(True))
     try:
         sw.WriteLine(u",".join([_csv_escape(h) for h in headers]))
@@ -381,7 +587,8 @@ def write_csv_and_link(rows, headers, total_saved_kb):
     finally:
         sw.Close()
 
-    output.print_md("**CSV saved:** {}".format(csv_path))
-    output.linkify(csv_path, title="Open CSV")
+    csv_uri = u"file:///" + _as_text(csv_path).replace(u'\\', u'/')
+    output.print_md(u"**CSV saved:** {}".format(csv_path))
+    output.print_md(u"[Open CSV]({})".format(csv_uri))
 
 write_csv_and_link(table_rows, headers, total_saved)
