@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
-# Family Purge (biggest-first) for pyRevit — API-only, SILENT, no renaming
+# Family Purge (biggest-first) for pyRevit — API-only, SILENT, no renaming, CSV export
 # - Scans editable, non in-place families
-# - Ranks by temp SaveAs size (to %TEMP%/<FamilyName>.rfa) without changing the family name
-# - If the family name has illegal file-name chars, size scan is skipped to avoid rename
+# - Ranks by temp SaveAs to %TEMP%/<FamilyName>.rfa (no rename risk)
 # - Purges via API (imports, images, unused family types, unused materials, deletable element types)
-# - Reloads into project (overwrite) with NO transaction
-# - Suppresses warnings during purge transactions
-# - Reports results cleanly
+# - Reloads into project (overwrite) with NO project transaction
+# - Suppresses warnings in purge transactions
+# - Emits CSV to %TEMP%\pyrevit_family_purge\ and prints a clickable link
 
 from Autodesk.Revit import DB, UI
 from Autodesk.Revit.DB import (
@@ -16,7 +15,8 @@ from Autodesk.Revit.DB import (
 from pyrevit import forms, revit, script, coreutils
 import System
 from System.IO import Path, File, FileInfo, Directory
-import re, uuid, traceback
+from System.Text import UTF8Encoding
+import re, uuid, traceback, datetime
 
 uidoc = __revit__.ActiveUIDocument
 doc   = uidoc.Document
@@ -54,6 +54,9 @@ _illegal = re.compile(r'[\\/:\*\?"<>\|\x00-\x1F]')
 
 def _has_illegal_filename_chars(name):
     return bool(_illegal.search(name or ""))
+
+def _sanitize_for_file(name):
+    return _illegal.sub('_', name or "Project")
 
 def temp_dir():
     d = Path.Combine(Path.GetTempPath(), "pyrevit_family_purge")
@@ -241,10 +244,10 @@ for fam in candidates:
         famdoc = doc.EditFamily(fam)
         pre_path = build_preserving_name_path(famdoc)
         if pre_path:
-            save_as_exact_name(famdoc, pre_path)         # %TEMP%/<FamilyName>.rfa
+            save_as_exact_name(famdoc, pre_path)   # %TEMP%/<FamilyName>.rfa
             size = file_size_kb(pre_path)
             pre_kb = size if size is not None else -1
-            cleanup_temp(pre_path)                        # safe to delete now
+            cleanup_temp(pre_path)
         else:
             pre_kb = -1
             can_size = False
@@ -261,7 +264,7 @@ rank_info.sort(key=lambda x: x[1], reverse=True)
 worklist = rank_info if process_all else rank_info[:n_default]
 
 # ----------------------------
-# Purge + reload (silent)  — no renaming
+# Purge + reload (silent) — no renaming
 # ----------------------------
 results = []
 with forms.ProgressBar(title='Purging families (silent, no-rename)...', step=1, cancellable=True) as pb:
@@ -292,7 +295,7 @@ with forms.ProgressBar(title='Purging families (silent, no-rename)...', step=1, 
                 post_path = build_preserving_name_path(famdoc)
                 if post_path:
                     try:
-                        save_as_exact_name(famdoc, post_path)     # same %TEMP%/<FamilyName>.rfa
+                        save_as_exact_name(famdoc, post_path)
                         post_kb = file_size_kb(post_path)
                     except Exception:
                         post_kb = None
@@ -311,7 +314,6 @@ with forms.ProgressBar(title='Purging families (silent, no-rename)...', step=1, 
             # Reload into project (NO transaction allowed here)
             opts = OverwriteLoadOptions()
             if doc.IsModifiable:
-                # Shouldn't happen in this script, but guard anyway
                 raise Exception("Project doc has an open transaction. Close it before LoadFamily.")
             famdoc.LoadFamily(doc, opts)
             row["Status"] = (row["Status"] + " | " if row["Status"] else "") + "Purged & Reloaded"
@@ -328,7 +330,7 @@ with forms.ProgressBar(title='Purging families (silent, no-rename)...', step=1, 
         results.append(row)
 
 # ----------------------------
-# Report (list-of-lists -> clean table)
+# Report (list-of-lists) + CSV export
 # ----------------------------
 headers = ["Family", "Pre Size (KB)", "Post Size (KB)", "Saved (KB)", "Deleted Items", "Status"]
 
@@ -352,3 +354,34 @@ output.print_table(table_rows, columns=headers)
 
 total_saved = sum([(r.get("Saved (KB)") or 0) for r in results_sorted])
 output.print_md("**Total saved ~ {} KB (~{:.2f} MB)**".format(total_saved, total_saved/1024.0))
+
+# ---- CSV: write to %TEMP%\pyrevit_family_purge and linkify
+def _csv_escape(s):
+    if s is None:
+        s = ""
+    s = unicode(s) if not isinstance(s, unicode) else s
+    s = s.replace(u'"', u'""')
+    if u',' in s or u'\n' in s or u'"' in s:
+        return u'"' + s + u'"'
+    return s
+
+def write_csv_and_link(rows, headers, total_saved_kb):
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    proj = _sanitize_for_file(doc.Title)
+    csv_path = Path.Combine(temp_dir(), u"FamilyPurgeResults_{}_{}.csv".format(proj, ts))
+
+    # Use .NET StreamWriter to avoid IronPython csv+unicode quirks; add UTF-8 BOM for Excel
+    sw = System.IO.StreamWriter(csv_path, False, UTF8Encoding(True))
+    try:
+        sw.WriteLine(u",".join([_csv_escape(h) for h in headers]))
+        for row in rows:
+            sw.WriteLine(u",".join([_csv_escape(x) for x in row]))
+        sw.WriteLine(u"")
+        sw.WriteLine(u"{},{}".format(_csv_escape(u"Total saved (KB)"), _csv_escape(total_saved_kb)))
+    finally:
+        sw.Close()
+
+    output.print_md("**CSV saved:** {}".format(csv_path))
+    output.linkify(csv_path, title="Open CSV")
+
+write_csv_and_link(table_rows, headers, total_saved)
