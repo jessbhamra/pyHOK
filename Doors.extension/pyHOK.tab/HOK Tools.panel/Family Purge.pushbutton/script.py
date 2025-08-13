@@ -300,12 +300,18 @@ with forms.ProgressBar(title='Purging families (silent, API-only)...', step=1, c
             if row["Pre Size (KB)"] is not None and post_kb is not None:
                 row["Saved (KB)"] = max(0, row["Pre Size (KB)"] - post_kb)
 
-            # Reload purged family into project (overwrite) — also silent
+            # Reload purged family into project (overwrite) — NO transaction allowed here
             opts = OverwriteLoadOptions()
-            with _silent_tx(doc, "Reload Purged Family: {}".format(fam.Name)) as t:
-                t.Start()
+            try:
+                if doc.IsModifiable:
+                    # Paranoia: we should never be inside a TX on the project doc here
+                    # (Our code doesn't open one; this catches anything external)
+                    raise Exception("Project document is modifiable (open transaction). Close it before LoadFamily.")
                 famdoc.LoadFamily(doc, opts)
-                t.Commit()
+                row["Status"] = (row["Status"] + " | " if row["Status"] else "") + "Purged & Reloaded"
+            except Exception as ex:
+                row["Status"] = (row.get("Status") or "") + " RELOAD FAILED: {}".format(ex)
+
 
             row["Status"] = (row["Status"] + " | " if row["Status"] else "") + "Purged & Reloaded"
 
