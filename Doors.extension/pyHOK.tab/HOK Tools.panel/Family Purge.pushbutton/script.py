@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-# Family Purge (biggest-first) for pyRevit — API-only + SILENT (suppressed warnings)
+# Family Purge (biggest-first) for pyRevit — API-only, SILENT, no renaming
 # - Scans editable, non in-place families
-# - Ranks by temp SaveAs size (safe+unique temp filenames)
-# - Purges via API (no Performance Adviser dependency)
-# - Suppresses warnings/popups during purge & reload
-# - Reloads into project (overwrite), reports size savings
+# - Ranks by temp SaveAs size (to %TEMP%/<FamilyName>.rfa) without changing the family name
+# - If the family name has illegal file-name chars, size scan is skipped to avoid rename
+# - Purges via API (imports, images, unused family types, unused materials, deletable element types)
+# - Reloads into project (overwrite) with NO transaction
+# - Suppresses warnings during purge transactions
+# - Reports results cleanly
 
 from Autodesk.Revit import DB, UI
 from Autodesk.Revit.DB import (
@@ -14,8 +16,7 @@ from Autodesk.Revit.DB import (
 from pyrevit import forms, revit, script, coreutils
 import System
 from System.IO import Path, File, FileInfo, Directory
-from System import Guid
-import uuid, re, traceback
+import re, uuid, traceback
 
 uidoc = __revit__.ActiveUIDocument
 doc   = uidoc.Document
@@ -23,11 +24,10 @@ logger = coreutils.logger.get_logger(__name__)
 output = script.get_output()
 
 # ----------------------------
-# Failure suppression (silent tx)
+# Failure suppression (silent transactions)
 # ----------------------------
 class _SwallowFailures(DB.IFailuresPreprocessor):
     def PreprocessFailures(self, failuresAccessor):
-        # Delete all warnings; continue processing
         try:
             for f in failuresAccessor.GetFailureMessages():
                 try:
@@ -39,7 +39,6 @@ class _SwallowFailures(DB.IFailuresPreprocessor):
         return DB.FailureProcessingResult.Continue
 
 def _silent_tx(rdoc, name):
-    """Create a Transaction with warning dialogs suppressed."""
     t = Transaction(rdoc, name)
     opts = t.GetFailureHandlingOptions()
     opts.SetClearAfterRollback(True)
@@ -49,23 +48,25 @@ def _silent_tx(rdoc, name):
     return t
 
 # ----------------------------
-# Helpers (hardened temp files)
+# Temp file helpers (NO RENAME)
 # ----------------------------
 _illegal = re.compile(r'[\\/:\*\?"<>\|\x00-\x1F]')
 
-def _sanitize(s):
-    if not s:
-        return "untitled"
-    return _illegal.sub('_', s)
+def _has_illegal_filename_chars(name):
+    return bool(_illegal.search(name or ""))
 
-def tmp_rfa_path(fam_name, suffix="pre"):
-    tmpdir = Path.GetTempPath()
-    if not Directory.Exists(tmpdir):
-        Directory.CreateDirectory(tmpdir)
-    safe_fam  = _sanitize(fam_name)
-    safe_proj = _sanitize(doc.Title)
-    u = str(uuid.uuid4())[:8]  # uniqueness to avoid collisions
-    return Path.Combine(tmpdir, "{}_{}_{}_{}.rfa".format(safe_fam, safe_proj, suffix, u))
+def temp_dir():
+    d = Path.Combine(Path.GetTempPath(), "pyrevit_family_purge")
+    if not Directory.Exists(d):
+        Directory.CreateDirectory(d)
+    return d
+
+def build_preserving_name_path(fdoc):
+    """Return %TEMP%/<FamilyName>.rfa if legal; else None (skip sizing to avoid rename)."""
+    famname = (fdoc.Title or "").strip()
+    if not famname or _has_illegal_filename_chars(famname):
+        return None
+    return Path.Combine(temp_dir(), famname + ".rfa")
 
 def file_size_kb(path):
     try:
@@ -75,19 +76,20 @@ def file_size_kb(path):
     except:
         return None
 
-def save_as_temp(family_doc, path):
+def save_as_exact_name(family_doc, exact_path):
+    """SaveAs to exact_path (which must be <FamilyName>.rfa). This does not rename in-project."""
     sao = SaveAsOptions()
     sao.OverwriteExistingFile = True
     try:
         sao.Compact = True
     except:
         pass
-    d = Path.GetDirectoryName(path)
+    d = Path.GetDirectoryName(exact_path)
     if d and not Directory.Exists(d):
         Directory.CreateDirectory(d)
-    family_doc.SaveAs(path, sao)
-    if not File.Exists(path) or FileInfo(path).Length == 0:
-        raise Exception("Temp SaveAs failed or produced empty file: {}".format(path))
+    family_doc.SaveAs(exact_path, sao)
+    if not File.Exists(exact_path) or FileInfo(exact_path).Length == 0:
+        raise Exception("Temp SaveAs failed or produced empty file: {}".format(exact_path))
 
 def cleanup_temp(*paths):
     for p in paths:
@@ -103,7 +105,6 @@ class OverwriteLoadOptions(DB.IFamilyLoadOptions):
     def OnSharedFamilyFound(self, familyInUse, newFamily, source, overwriteParameterValues):
         return True
 
-# Utility to build a .NET List[ElementId]
 def ListElementIds(seq):
     lst = System.Collections.Generic.List[ElementId]()
     for x in seq:
@@ -111,13 +112,12 @@ def ListElementIds(seq):
     return lst
 
 # ----------------------------
-# Purge primitives (inside family doc, SILENT)
+# Purge primitives (inside family doc, silent)
 # ----------------------------
 def delete_elements(fdoc, ids, label):
     if not ids:
         return 0
     deleted = 0
-    # Bulk attempt
     with _silent_tx(fdoc, "Purge: {}".format(label)) as t:
         t.Start()
         try:
@@ -127,7 +127,6 @@ def delete_elements(fdoc, ids, label):
             return deleted
         except:
             t.RollBack()
-    # Fallback one-by-one (also silent)
     with _silent_tx(fdoc, "Purge (fallback): {}".format(label)) as t:
         t.Start()
         for eid in ids:
@@ -141,9 +140,7 @@ def delete_elements(fdoc, ids, label):
 
 def purge_imports_and_images(fdoc):
     to_del = []
-    # Imported CAD instances
     to_del.extend([e.Id for e in FilteredElementCollector(fdoc).OfClass(ImportInstance)])
-    # Embedded images (types)
     to_del.extend([e.Id for e in FilteredElementCollector(fdoc).OfClass(ImageType)])
     return delete_elements(fdoc, to_del, "Imports & Images")
 
@@ -172,7 +169,7 @@ def _collect_used_material_ids(fdoc):
     elems = FilteredElementCollector(fdoc).WhereElementIsNotElementType().ToElements()
     for e in elems:
         try:
-            ids = e.GetMaterialIds(False)  # exclude paints
+            ids = e.GetMaterialIds(False)
             if ids:
                 for mid in ids:
                     used.add(mid.IntegerValue)
@@ -196,7 +193,6 @@ def purge_unused_materials(fdoc):
     return delete_elements(fdoc, to_del, "Unused Materials")
 
 def purge_unused_element_types_best_effort(fdoc):
-    # Delete any element types Revit permits (skip FamilyTypes handled above)
     types = FilteredElementCollector(fdoc).WhereElementIsElementType().ToElements()
     famtype_ids = set()
     try:
@@ -222,7 +218,7 @@ def purge_family_api_only(fdoc):
     return total
 
 # ----------------------------
-# Gather candidates & rank by size
+# Gather candidates & pre-rank by size (no rename)
 # ----------------------------
 families = list(FilteredElementCollector(doc).OfClass(Family))
 candidates = [f for f in families if f.IsEditable and not f.IsInPlace]
@@ -236,18 +232,22 @@ choice = forms.CommandSwitchWindow.show(
 )
 process_all = (choice == "All")
 
-# Pre-pass: temp-save to measure size
-rank_info = []  # (family, pre_kb, pre_path_for_debug)
+rank_info = []  # (family, pre_kb, can_size)
 for fam in candidates:
     famdoc = None
-    pre_path = None
     pre_kb = -1
+    can_size = True
     try:
         famdoc = doc.EditFamily(fam)
-        pre_path = tmp_rfa_path(fam.Name, "pre")
-        save_as_temp(famdoc, pre_path)
-        size = file_size_kb(pre_path)
-        pre_kb = size if size is not None else -1
+        pre_path = build_preserving_name_path(famdoc)
+        if pre_path:
+            save_as_exact_name(famdoc, pre_path)         # %TEMP%/<FamilyName>.rfa
+            size = file_size_kb(pre_path)
+            pre_kb = size if size is not None else -1
+            cleanup_temp(pre_path)                        # safe to delete now
+        else:
+            pre_kb = -1
+            can_size = False
     except Exception:
         pre_kb = -1
         logger.debug("Pre-size failed for '{}'\n{}".format(fam.Name, traceback.format_exc()))
@@ -255,17 +255,17 @@ for fam in candidates:
         if famdoc:
             try: famdoc.Close(False)
             except: pass
-    rank_info.append((fam, pre_kb, pre_path))
+    rank_info.append((fam, pre_kb, can_size))
 
 rank_info.sort(key=lambda x: x[1], reverse=True)
 worklist = rank_info if process_all else rank_info[:n_default]
 
 # ----------------------------
-# Purge + reload (SILENT)
+# Purge + reload (silent)  — no renaming
 # ----------------------------
 results = []
-with forms.ProgressBar(title='Purging families (silent, API-only)...', step=1, cancellable=True) as pb:
-    for i, (fam, pre_kb, _) in enumerate(worklist):
+with forms.ProgressBar(title='Purging families (silent, no-rename)...', step=1, cancellable=True) as pb:
+    for i, (fam, pre_kb, can_size) in enumerate(worklist):
         if pb.cancelled:
             break
         pb.update_progress(i+1, len(worklist))
@@ -284,35 +284,36 @@ with forms.ProgressBar(title='Purging families (silent, API-only)...', step=1, c
         try:
             famdoc = doc.EditFamily(fam)
 
-            # Purge (silent)
             deleted = purge_family_api_only(famdoc)
             row["Deleted Items"] = deleted
 
-            # Measure post size
-            post_path = tmp_rfa_path(fam.Name, "post")
-            try:
-                save_as_temp(famdoc, post_path)
-                post_kb = file_size_kb(post_path)
-            except Exception:
+            # Post size (only if we can SaveAs using the exact family name)
+            if can_size:
+                post_path = build_preserving_name_path(famdoc)
+                if post_path:
+                    try:
+                        save_as_exact_name(famdoc, post_path)     # same %TEMP%/<FamilyName>.rfa
+                        post_kb = file_size_kb(post_path)
+                    except Exception:
+                        post_kb = None
+                        row["Status"] = (row["Status"] + " | " if row["Status"] else "") + "post-size unknown"
+                else:
+                    post_kb = None
+                    row["Status"] = (row["Status"] + " | " if row["Status"] else "") + "size-scan skipped (illegal chars)"
+            else:
                 post_kb = None
-                row["Status"] = (row.get("Status") or "") + " (post-size unknown)"
+                row["Status"] = (row["Status"] + " | " if row["Status"] else "") + "size-scan skipped (illegal chars)"
+
             row["Post Size (KB)"] = post_kb
             if row["Pre Size (KB)"] is not None and post_kb is not None:
                 row["Saved (KB)"] = max(0, row["Pre Size (KB)"] - post_kb)
 
-            # Reload purged family into project (overwrite) — NO transaction allowed here
+            # Reload into project (NO transaction allowed here)
             opts = OverwriteLoadOptions()
-            try:
-                if doc.IsModifiable:
-                    # Paranoia: we should never be inside a TX on the project doc here
-                    # (Our code doesn't open one; this catches anything external)
-                    raise Exception("Project document is modifiable (open transaction). Close it before LoadFamily.")
-                famdoc.LoadFamily(doc, opts)
-                row["Status"] = (row["Status"] + " | " if row["Status"] else "") + "Purged & Reloaded"
-            except Exception as ex:
-                row["Status"] = (row.get("Status") or "") + " RELOAD FAILED: {}".format(ex)
-
-
+            if doc.IsModifiable:
+                # Shouldn't happen in this script, but guard anyway
+                raise Exception("Project doc has an open transaction. Close it before LoadFamily.")
+            famdoc.LoadFamily(doc, opts)
             row["Status"] = (row["Status"] + " | " if row["Status"] else "") + "Purged & Reloaded"
 
         except Exception as ex:
@@ -327,10 +328,27 @@ with forms.ProgressBar(title='Purging families (silent, API-only)...', step=1, c
         results.append(row)
 
 # ----------------------------
-# Report
+# Report (list-of-lists -> clean table)
 # ----------------------------
 headers = ["Family", "Pre Size (KB)", "Post Size (KB)", "Saved (KB)", "Deleted Items", "Status"]
-output.print_md("### Family Purge Results (silent, API-only, largest-first)")
-output.print_table(results, columns=headers)
-total_saved = sum([r["Saved (KB)"] or 0 for r in results if r.get("Saved (KB)") is not None])
+
+def _fmt(v): return "-" if v is None else v
+
+results_sorted = sorted(results, key=lambda r: (r.get("Saved (KB)") or 0, r.get("Pre Size (KB)") or 0), reverse=True)
+
+table_rows = []
+for r in results_sorted:
+    table_rows.append([
+        r.get("Family", ""),
+        _fmt(r.get("Pre Size (KB)")),
+        _fmt(r.get("Post Size (KB)")),
+        _fmt(r.get("Saved (KB)")),
+        _fmt(r.get("Deleted Items")),
+        r.get("Status") or "",
+    ])
+
+output.print_md("### Family Purge Results (silent, API-only, no-rename, largest-first)")
+output.print_table(table_rows, columns=headers)
+
+total_saved = sum([(r.get("Saved (KB)") or 0) for r in results_sorted])
 output.print_md("**Total saved ~ {} KB (~{:.2f} MB)**".format(total_saved, total_saved/1024.0))
