@@ -21,7 +21,7 @@ It also provides a CSV report of the purged families, their sizes before and aft
 It is designed to be run from the pyRevit environment and uses the pyRevit forms and logging utilities.
 It is important to note that this tool does not rename families, it only purges them
 and reloads them into the project.
-It is also important to note that this tool does not handle in-place families, only loadable families.
+It is also important to note that this tool does not handle in-place or system families, only loadable families.
 """
 
 
