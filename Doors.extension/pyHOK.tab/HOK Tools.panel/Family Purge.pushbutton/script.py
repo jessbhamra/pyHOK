@@ -29,7 +29,7 @@ It is also important to note that this tool does not handle in-place or system f
 from Autodesk.Revit import DB, UI
 from Autodesk.Revit.DB import (
     Transaction, FilteredElementCollector, Family, SaveAsOptions, ElementId,
-    ImportInstance, ImageType, ImageInstance, ElementType, Material, FamilyType,
+    ImportInstance, ImageType, ImageInstance,  Material, FamilyType,
     FamilySymbol, FamilyInstance, Dimension, View, ViewType, FilledRegionType,
     FillPatternElement, AppearanceAssetElement
 )
