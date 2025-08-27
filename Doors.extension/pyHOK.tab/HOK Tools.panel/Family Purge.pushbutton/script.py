@@ -57,6 +57,13 @@ DELETE_UNLABELED_UNLOCKED_DIMENSIONS = False   # set True to free more space (ri
 DELETE_EXTRA_VIEWS = False                    # set True to keep 1 plan + 1 3D; remove Drafting/extra 3D/etc.
 
 # ----------------------------
+# PURGE CONFIGURATION
+# ----------------------------
+# Purge GUID for Performance Adviser (same as Door Configurator)
+PURGE_GUID = 'e8c63650-70b7-435a-9010-ec97660c1bda'
+PURGE_ITERATIONS = 3  # Number of times to purge each family
+
+# ----------------------------
 # GLOBAL CANCEL STATE (ESC + UI cancel)
 # ----------------------------
 _CANCEL_REQUESTED = False
@@ -231,248 +238,74 @@ def ListElementIds(seq):
     return lst
 
 # ----------------------------
-# Purge primitives (inside family doc, silent) — with cancellation checks
+# Performance Adviser Purge Method (replaces API-only purge)
 # ----------------------------
-def delete_elements(fdoc, ids, label, is_cancelled):
-    if not ids or (is_cancelled and is_cancelled()):
-        return 0
-    deleted = 0
-    # Bulk attempt
+def purge_perf_adv(family_doc, is_cancelled):
+    """Purge family using Performance Adviser method - runs multiple iterations for deeper purge."""
     if is_cancelled and is_cancelled():
-        return deleted
-    with _silent_tx(fdoc, "Purge: {}".format(label)) as t:
-        t.Start()
-        try:
-            if is_cancelled and is_cancelled():
-                t.RollBack()
-                return deleted
-            fdoc.Delete(ListElementIds(ids))
-            deleted = len(ids)
-            t.Commit()
-            return deleted
-        except:
-            t.RollBack()
-    # Fallback one-by-one (allow partial progress, bail early on cancel)
-    with _silent_tx(fdoc, "Purge (fallback): {}".format(label)) as t:
-        t.Start()
-        for eid in ids:
-            if is_cancelled and is_cancelled():
-                break
+        return 0
+    
+    total_deleted = 0
+    purgeGuid = PURGE_GUID
+    performanceAdviser = DB.PerformanceAdviser.GetPerformanceAdviser()
+    guid = System.Guid(purgeGuid)
+    ruleId = None
+    
+    # Find the PerformanceAdviserRuleId for the purge command
+    allRuleIds = performanceAdviser.GetAllRuleIds()
+    for rule in allRuleIds:
+        if str(rule.Guid) == purgeGuid:
+            ruleId = rule
+            break
+    
+    if not ruleId:
+        logger.warning("Purge rule not found with GUID: {}".format(purgeGuid))
+        return 0
+    
+    ruleIds = System.Collections.Generic.List[DB.PerformanceAdviserRuleId]([ruleId])
+    
+    # Run purge multiple times for deeper cleaning
+    for iteration in range(PURGE_ITERATIONS):
+        if is_cancelled and is_cancelled():
+            break
+            
+        purgableElementIds = []
+        
+        # Execute the purge
+        failureMessages = performanceAdviser.ExecuteRules(family_doc, ruleIds)
+        if failureMessages.Count > 0:
+            # Retrieve the elements
+            purgableElementIds = failureMessages[0].GetFailingElements()
+        
+        if not purgableElementIds or len(purgableElementIds) == 0:
+            # No more elements to purge
+            break
+        
+        # Delete the elements
+        deleted_this_iteration = 0
+        with _silent_tx(family_doc, 'Purge iteration {}'.format(iteration + 1)) as t:
+            t.Start()
             try:
-                fdoc.Delete(eid)
-                deleted += 1
+                # Try bulk delete first
+                family_doc.Delete(purgableElementIds)
+                deleted_this_iteration = len(purgableElementIds)
             except:
-                pass
-        t.Commit()
-    return deleted
-
-# Imports & Images (instances + types)
-def purge_imports_and_images(fdoc, is_cancelled):
-    to_del = []
-    to_del.extend([e.Id for e in FilteredElementCollector(fdoc).OfClass(ImportInstance)])
-    to_del.extend([e.Id for e in FilteredElementCollector(fdoc).OfClass(ImageInstance)])
-    to_del.extend([e.Id for e in FilteredElementCollector(fdoc).OfClass(ImageType)])
-    return delete_elements(fdoc, to_del, "Imports & Images", is_cancelled)
-
-# Unused Family TYPES (within this family)
-def purge_unused_family_types(fdoc, is_cancelled):
-    fm = fdoc.FamilyManager
-    try:
-        current_type = fm.CurrentType
-        keep_id = current_type.Id if isinstance(current_type, FamilyType) else None
-        all_types = list(fm.Types)
-    except:
-        return 0
-    if len(all_types) <= 1:
-        return 0
-    to_del = []
-    for ft in all_types:
-        try:
-            if keep_id and ft.Id == keep_id:
-                continue
-            to_del.append(ft.Id)
-        except:
-            pass
-    return delete_elements(fdoc, to_del, "Unused Family Types", is_cancelled)
-
-# Unused nested FamilySymbols (no placed FamilyInstance uses them)
-def purge_unused_nested_symbols(fdoc, is_cancelled):
-    used = set()
-    for inst in FilteredElementCollector(fdoc).OfClass(FamilyInstance):
-        try:
-            sym = inst.Symbol
-            if sym:
-                used.add(sym.Id.IntegerValue)
-        except:
-            pass
-    to_del = []
-    for sym in FilteredElementCollector(fdoc).OfClass(FamilySymbol):
-        try:
-            if sym.Id.IntegerValue not in used:
-                to_del.append(sym.Id)
-        except:
-            pass
-    return delete_elements(fdoc, to_del, "Unused Nested Family Symbols", is_cancelled)
-
-# Materials & dependencies --------------------------------
-def _collect_used_material_ids(fdoc):
-    used = set()
-    elems = FilteredElementCollector(fdoc).WhereElementIsNotElementType().ToElements()
-    for e in elems:
-        try:
-            ids = e.GetMaterialIds(False)
-            if ids:
-                for mid in ids:
-                    used.add(mid.IntegerValue)
-        except:
-            pass
-    return used
-
-def purge_unused_materials(fdoc, is_cancelled):
-    used_ids = _collect_used_material_ids(fdoc)
-    mats = list(FilteredElementCollector(fdoc).OfClass(Material))
-    to_del = []
-    for m in mats:
-        try:
-            nm = (m.Name or "").strip().lower()
-            if nm in ("default", "global"):
-                continue
-            if m.Id.IntegerValue not in used_ids:
-                to_del.append(m.Id)
-        except:
-            pass
-    return delete_elements(fdoc, to_del, "Unused Materials", is_cancelled)
-
-# Fill patterns not referenced by any material (and from FilledRegionTypes)
-def purge_unused_fill_patterns(fdoc, is_cancelled):
-    used = set()
-    for m in FilteredElementCollector(fdoc).OfClass(Material):
-        try:
-            for pid in (
-                m.SurfaceForegroundPatternId,
-                m.SurfaceBackgroundPatternId,
-                m.CutForegroundPatternId,
-                m.CutBackgroundPatternId
-            ):
-                if pid and pid != ElementId.InvalidElementId:
-                    used.add(pid.IntegerValue)
-        except:
-            pass
-    for frt in FilteredElementCollector(fdoc).OfClass(FilledRegionType):
-        try:
-            pid = frt.FillPatternId
-            if pid and pid != ElementId.InvalidElementId:
-                used.add(pid.IntegerValue)
-        except:
-            pass
-    to_del = []
-    for fp in FilteredElementCollector(fdoc).OfClass(FillPatternElement):
-        try:
-            if fp.Id.IntegerValue not in used:
-                to_del.append(fp.Id)
-        except:
-            pass
-    return delete_elements(fdoc, to_del, "Unused Fill Patterns", is_cancelled)
-
-# Appearance assets not used by any material
-def purge_unused_appearance_assets(fdoc, is_cancelled):
-    used = set()
-    for m in FilteredElementCollector(fdoc).OfClass(Material):
-        try:
-            aid = m.AppearanceAssetId
-            if aid and aid != ElementId.InvalidElementId:
-                used.add(aid.IntegerValue)
-        except:
-            pass
-    to_del = []
-    for aa in FilteredElementCollector(fdoc).OfClass(AppearanceAssetElement):
-        try:
-            if aa.Id.IntegerValue not in used:
-                to_del.append(aa.Id)
-        except:
-            pass
-    return delete_elements(fdoc, to_del, "Unused Appearance Assets", is_cancelled)
-
-# Best-effort deletion of generic element types (skip FamilyTypes handled above)
-def purge_unused_element_types_best_effort(fdoc, is_cancelled):
-    types = FilteredElementCollector(fdoc).WhereElementIsElementType().ToElements()
-    famtype_ids = set()
-    try:
-        famtype_ids = set([ft.Id.IntegerValue for ft in fdoc.FamilyManager.Types])
-    except:
-        pass
-    to_del = []
-    for t in types:
-        try:
-            if t.Id.IntegerValue in famtype_ids:
-                continue
-            to_del.append(t.Id)
-        except:
-            pass
-    return delete_elements(fdoc, to_del, "Unused Element Types (best-effort)", is_cancelled)
-
-# Optional: Unlabeled & unlocked dimensions
-def purge_unlabeled_unlocked_dimensions(fdoc, is_cancelled):
-    if not DELETE_UNLABELED_UNLOCKED_DIMENSIONS:
-        return 0
-    to_del = []
-    for d in FilteredElementCollector(fdoc).OfClass(Dimension):
-        try:
-            if d.FamilyLabel is None and not d.IsLocked:
-                to_del.append(d.Id)
-        except:
-            pass
-    return delete_elements(fdoc, to_del, "Unlabeled & Unlocked Dimensions", is_cancelled)
-
-# Optional: extra views — keep 1 plan + 1 3D, delete drafting/extra 3D/duplicates
-def purge_extra_views(fdoc, is_cancelled):
-    if not DELETE_EXTRA_VIEWS:
-        return 0
-    views = list(FilteredElementCollector(fdoc).OfClass(View))
-    keep = set()
-    plan = next((v for v in views if not v.IsTemplate and v.ViewType in (ViewType.FloorPlan, ViewType.CeilingPlan)), None)
-    if plan:
-        keep.add(plan.Id.IntegerValue)
-    v3d = next((v for v in views if not v.IsTemplate and v.ViewType == ViewType.ThreeD), None)
-    if v3d:
-        keep.add(v3d.Id.IntegerValue)
-    to_del = []
-    for v in views:
-        try:
-            if v.IsTemplate:
-                continue
-            if v.ViewType in (ViewType.Legend, ViewType.DraftingView, ViewType.DrawingSheet, ViewType.Schedule):
-                to_del.append(v.Id)
-                continue
-            if v.Id.IntegerValue in keep:
-                continue
-            to_del.append(v.Id)
-        except:
-            pass
-    return delete_elements(fdoc, to_del, "Extra Views", is_cancelled)
-
-def purge_family_api_only(fdoc, is_cancelled):
-    if is_cancelled and is_cancelled():
-        return 0
-    total = 0
-    total += purge_imports_and_images(fdoc, is_cancelled)
-    if is_cancelled and is_cancelled(): return total
-    total += purge_unused_nested_symbols(fdoc, is_cancelled)
-    if is_cancelled and is_cancelled(): return total
-    total += purge_unused_family_types(fdoc, is_cancelled)
-    if is_cancelled and is_cancelled(): return total
-    total += purge_unused_materials(fdoc, is_cancelled)
-    if is_cancelled and is_cancelled(): return total
-    total += purge_unused_fill_patterns(fdoc, is_cancelled)
-    if is_cancelled and is_cancelled(): return total
-    total += purge_unused_appearance_assets(fdoc, is_cancelled)
-    if is_cancelled and is_cancelled(): return total
-    total += purge_unlabeled_unlocked_dimensions(fdoc, is_cancelled)
-    if is_cancelled and is_cancelled(): return total
-    total += purge_extra_views(fdoc, is_cancelled)
-    if is_cancelled and is_cancelled(): return total
-    total += purge_unused_element_types_best_effort(fdoc, is_cancelled)
-    return total
+                # Fallback to individual deletion
+                for e in purgableElementIds:
+                    try:
+                        family_doc.Delete(e)
+                        deleted_this_iteration += 1
+                    except:
+                        pass
+            t.Commit()
+        
+        total_deleted += deleted_this_iteration
+        
+        # If no elements were deleted this iteration, we're done
+        if deleted_this_iteration == 0:
+            break
+    
+    return total_deleted
 
 # ----------------------------
 # Gather candidates & pre-rank by size (no rename) — with cancel
@@ -547,7 +380,7 @@ worklist = rank_info if process_all else rank_info[:n_default]
 # Purge + reload (silent) — no renaming — with cancel
 # ----------------------------
 results = []
-with forms.ProgressBar(title='Purging families (silent, deeper purge)...', step=1, cancellable=True) as pb:
+with forms.ProgressBar(title='Purging families (Performance Adviser method, {} iterations)...'.format(PURGE_ITERATIONS), step=1, cancellable=True) as pb:
     def _is_cancelled():
         return _CANCEL_REQUESTED or pb.cancelled
     for i, (fam, pre_kb, can_size) in enumerate(worklist):
@@ -575,7 +408,7 @@ with forms.ProgressBar(title='Purging families (silent, deeper purge)...', step=
                 # leave without making changes
                 raise System.Exception("Cancelled")
 
-            deleted = purge_family_api_only(famdoc, _is_cancelled)
+            deleted = purge_perf_adv(famdoc, _is_cancelled)
             row["Deleted Items"] = deleted
 
             if _is_cancelled():
@@ -633,7 +466,7 @@ try:
 except:
     pass
 
-# If cancelled outright, let the user know (but still show what we’ve done so far)
+# If cancelled outright, let the user know (but still show what we've done so far)
 if _CANCEL_REQUESTED:
     output.print_md("**Operation cancelled by user. Showing partial results.**")
 
@@ -664,7 +497,7 @@ for r in results_sorted:
         _as_text(r.get("Status") or ""),
     ])
 
-output.print_md("### Family Purge Results (silent, API-only, deeper purge, no-rename, largest-first)")
+output.print_md("### Family Purge Results (Performance Adviser method, {} iterations, largest-first)".format(PURGE_ITERATIONS))
 output.print_table(table_rows, columns=headers)
 
 total_saved = sum([(r.get("Saved (KB)") or 0) for r in results_sorted])
