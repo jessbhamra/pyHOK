@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Family Purge (biggest-first) for pyRevit — API-only, SILENT, deeper purge, CSV, no rename, ESC/Cancel-anytime
+# Family Purge (biggest-first) for pyRevit —  SILENT, deeper purge, CSV, no rename, ESC/Cancel-anytime
 # - Deeper purge set (imports, image instances/types, unused nested symbols, materials, fill patterns,
 #   appearance assets, best-effort element types). Optional: dimensions & extra views.
 # - Silent transactions for deletes, dialog suppression for SaveAs warnings (constraints/joins/etc.)
